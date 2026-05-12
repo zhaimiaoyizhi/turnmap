@@ -8,6 +8,8 @@ ChatMap is an Edge-first browser extension that maps the current ChatGPT convers
 
 > Status: early preview. ChatMap is not yet published to Edge Add-ons or Chrome Web Store. Install it manually from source or from a GitHub Release package.
 
+![ChatMap preview](docs/assets/chatmap-preview.png)
+
 ## What It Is For
 
 ChatMap is designed for:
@@ -46,6 +48,9 @@ It currently maps the active ChatGPT conversation only. Cross-conversation knowl
 These items are planned before a wider public release:
 
 - **Update Notice**: notify users when a new GitHub Release or store version is available.
+- **More AI chat sites**: explore support for well-known web AI products such as Doubao, DeepSeek, Kimi, Gemini, Grok, and others.
+- **More browsers**: extend compatibility beyond Edge, especially Chrome and Firefox.
+- **More AI providers**: broaden API key support for more OpenAI-compatible and mainstream model providers.
 
 ## Install From Source
 
@@ -173,6 +178,9 @@ scripts           Build and packaging helpers
 - `0.2.0`: add Update Notice and stronger ChatGPT compatibility.
 - `0.3.0`: improve topic grouping, semantic linking, clustering, and bulk editing.
 - `0.4.0`: prepare store listing assets, icon set, privacy materials, and release automation.
+- `0.5.0`: start multi-site adapters for more AI chat websites, beginning with high-traffic services.
+- `0.6.0`: broaden browser support for Chrome and Firefox while keeping Edge stable.
+- `0.7.0`: expand AI provider presets and compatibility checks for more API key types.
 - `1.0.0`: stable public release.
 
 ## Contributing

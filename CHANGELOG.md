@@ -24,6 +24,7 @@ All notable changes to ChatMap will be documented in this file.
 - Follow browser theme option that resolves to Day or Night from `prefers-color-scheme`.
 - Built-in UI language switching for English and Chinese, with Follow browser language detection.
 - AI-assisted custom UI translation generation for additional languages, saved locally as reusable language options.
+- GitHub README preview screenshot and Chinese social launch copy.
 
 ### Changed
 
@@ -34,6 +35,8 @@ All notable changes to ChatMap will be documented in this file.
 - Updated core app chrome, toolbar, Settings, AI settings, layout labels, and relationship labels to use localized UI text.
 - Raised the View menu stacking layer so it appears above the graph toolbar.
 - Restyled React Flow controls and MiniMap with theme-aware colors so Night mode controls remain visible.
+- Updated README roadmap with future multi-AI-site, multi-browser, and broader API provider compatibility plans.
+- Restored the Chinese README as readable UTF-8 documentation.
 
 ### Known Issues
 

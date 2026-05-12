@@ -2,50 +2,55 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-把 ChatGPT 对话转成可编辑的思维导图。
+把 ChatGPT 对话转换成可编辑、可跳转、可导出的思维导图。
 
-ChatMap 是一个优先面向 Edge 的浏览器扩展，用于把当前 ChatGPT 对话映射成可视化图谱。每一轮问答会成为一个节点。节点可以跳回 ChatGPT 原文，也可以被编辑、链接、AI 总结、导出，并在之后恢复继续整理。
+ChatMap 是一个优先面向 Edge 的浏览器扩展，用来把当前 ChatGPT 对话映射成可视化节点图。每一轮问答会成为一个节点，节点可以跳回 ChatGPT 原文，也可以被编辑、链接、AI 总结、导出，并在之后恢复继续整理。
 
-> 状态：早期预览版。ChatMap 尚未发布到 Edge Add-ons 或 Chrome Web Store。目前可以从源码手动安装，或从 GitHub Release 下载预览包。
+> 状态：早期预览版。ChatMap 还没有发布到 Edge Add-ons 或 Chrome Web Store。当前可以从源码手动安装，或从 GitHub Release 下载预览包。
+
+![ChatMap 预览](docs/assets/chatmap-preview.png)
 
 ## 适用场景
 
 ChatMap 适合：
 
-- 个人学习与复习。
+- 个人学习、复习和知识整理。
 - 长 ChatGPT 对话导航。
-- 在单个对话内做研究、写作和知识整理。
+- 在单个对话内做研究、写作和材料组织。
 
 当前版本只服务于当前打开的 ChatGPT 对话。跨多个对话的全局知识图谱不属于首发版本范围。
 
 ## 功能亮点
 
-- **对话地图**：把当前 ChatGPT 对话转成节点图。
+- **对话地图**：把当前 ChatGPT 对话转换成节点图。
 - **长对话难以准确定位？跳回原文**：点击节点即可回到 ChatGPT 中对应的问答位置。
-- **支持大量的自定义编辑！可编辑图谱**：编辑标题、摘要、标签、状态、笔记、隐藏节点和链接。
+- **支持大量自定义编辑的图谱**：编辑标题、摘要、标签、状态、笔记、隐藏节点和关系链接。
 - **语义链接**：不同关系类型使用不同颜色，重要链接可以加粗强调。
 - **AI 辅助**：总结节点，并建议高置信度语义链接。
 - **多种视图**：Side Panel、Full Page 和 Float。
-- **Settings Page**：在图谱工作区之外管理 AI、界面默认值、launcher、Float 和更新偏好。
-- **ChatGPT launcher**：ChatGPT 页面右侧的小启动球。左键打开 ChatMap，右键打开设置。
+- **设置页面**：在图谱工作区之外管理 AI、界面默认值、Launcher、Float 和更新偏好。
+- **ChatGPT 悬浮启动器**：ChatGPT 页面右侧的小启动球，左键打开 ChatMap，右键打开设置。
 - **多种布局**：Single-side、Radial、Matrix 和 Two-sided。
 - **导入导出**：ChatMap JSON、Obsidian Canvas、Markdown、SVG 和 PNG。
-- **本地优先存储**：每个对话的图谱状态保存在浏览器本地配置中。
+- **本地优先存储**：每个对话的图谱状态保存在浏览器本地扩展存储中。
 
 ## 当前视图
 
 | 视图 | 用途 |
 | --- | --- |
 | Side Panel | 在 Edge 侧边栏中与 ChatGPT 并排使用。 |
-| Full Page | 使用更大的图谱画布，并保持与源 ChatGPT 标签页联动。 |
+| Full Page | 使用更大的图谱画布，同时保持与源 ChatGPT 标签页联动。 |
 | Float | 在 ChatGPT 页面内使用紧凑的悬浮导航器。 |
 | ChatGPT Launcher | 在 ChatGPT 页面右侧快速打开 ChatMap 或设置。 |
 
 ## 公开发布前计划
 
-这些功能计划在更广泛公开发布前完成：
+这些功能计划在更广泛公开发布前逐步推进：
 
-- **Update Notice**：当 GitHub Release 或商店版本有更新时提示用户。
+- **更新提示**：当 GitHub Release 或商店版本有更新时提示用户。
+- **更多 AI 对话网页兼容**：探索支持豆包、DeepSeek、Kimi、Gemini、Grok 等知名网页端 AI 产品。
+- **更多浏览器兼容**：从 Edge 扩展到 Chrome、Firefox 等浏览器。
+- **更多 API Key 兼容**：扩展更多 OpenAI-compatible 与主流模型服务商的 API Key 支持。
 
 ## 从源码安装
 
@@ -158,13 +163,14 @@ scripts           构建和打包辅助脚本
 - [Permission Review](docs/permissions-review.md)
 - [Release Readiness](docs/release-readiness.md)
 - [GitHub Release Plan](docs/github-release-plan.html)
+- [社交平台宣传文案](docs/social-promo.zh-CN.md)
 
 ## 已知限制
 
 - ChatGPT 页面和 backend 行为可能随时变化。
 - 对话中出现重复问题时，跳转精度可能下降。
 - GitHub/unpacked 安装无法由扩展自身静默自动更新。
-- 商店发布可能需要 PNG 图标和额外隐私材料。
+- 商店发布可能需要额外 PNG 图标和隐私材料。
 - 自定义 AI provider 依赖 OpenAI-compatible 请求与响应格式。
 
 ## 路线图
@@ -173,6 +179,9 @@ scripts           构建和打包辅助脚本
 - `0.2.0`：加入 Update Notice，并增强 ChatGPT 兼容性。
 - `0.3.0`：改进主题分组、语义链接、聚类和批量编辑。
 - `0.4.0`：准备商店素材、图标集、隐私材料和发布自动化。
+- `0.5.0`：启动多 AI 对话网站适配，优先覆盖高流量服务。
+- `0.6.0`：扩展 Chrome 与 Firefox 兼容，同时保持 Edge 稳定。
+- `0.7.0`：增加更多 AI provider 预设与 API Key 兼容性检查。
 - `1.0.0`：稳定公开版本。
 
 ## 贡献
@@ -196,4 +205,4 @@ npm.cmd run build
 
 ## 许可证
 
-MIT。见 [LICENSE](LICENSE)。
+MIT。详见 [LICENSE](LICENSE)。
