@@ -2,7 +2,7 @@
 
 ## Scope
 
-ChatMap 0.1.0 is the first local test release for the Edge extension. It focuses on current-conversation mapping, reliable conversation extraction, editable graph workflows, AI-assisted summaries and links, and export/import recovery.
+ChatMap 0.1.0 is the first GitHub preview release for the Edge extension. It includes the latest current-conversation mapping, reliable conversation extraction, editable graph workflows, AI-assisted summaries and links, theme/language settings, and export/import recovery.
 
 ## Included
 
@@ -20,10 +20,13 @@ ChatMap 0.1.0 is the first local test release for the Edge extension. It focuses
 - ChatGPT Floating Launcher on ChatGPT pages. Left-click opens ChatMap; right-click opens settings.
 - JSON import/export, Obsidian Canvas export, Markdown export/copy, SVG export, and PNG export.
 - Local graph-state persistence per current conversation.
+- Light Day theme by default, plus Night, Eye-care, and Follow browser theme modes.
+- Built-in English and Chinese UI, Follow browser language mode, and locally stored AI-generated custom UI translations.
+- Theme-aware React Flow controls and MiniMap for readable dark mode.
 
 ## Planned Before Public Release
 
-- Update Notice for GitHub Release or future store-version awareness.
+- Store listing materials and update-notice wiring.
 
 ## Known Risks
 
@@ -31,6 +34,14 @@ ChatMap 0.1.0 is the first local test release for the Edge extension. It focuses
 - Real ChatGPT DOM and backend behavior can change without warning, so extraction fallbacks should be checked periodically.
 - Store submission may require PNG extension icons even though the local build accepts the SVG placeholder.
 - Custom AI providers depend on their OpenAI-compatible response format and CORS/host permissions.
+
+## Version Mapping Note
+
+Earlier local preview archives were renumbered before GitHub publication:
+
+- Former local `0.1.0` -> `0.8.0`
+- Former local `0.1.1` -> `0.9.0`
+- Former local `0.1.2` -> current GitHub preview `0.1.0`
 
 ## Package Command
 

@@ -17,6 +17,9 @@ import type { Turn } from "../../shared/types";
 import { jumpToTurnInActiveTab } from "../../shared/messaging";
 import { suggestSemanticEdges } from "../ai/link-suggestions";
 import { summarizeTurn } from "../ai/node-summary";
+import { Icon } from "../components/Icon";
+import type { I18nKey } from "../i18n/i18n-storage";
+import { useI18n } from "../i18n/useI18n";
 import { loadAiSettings } from "../settings/ai-settings-storage";
 import { TurnNode } from "./TurnNode";
 import {
@@ -141,6 +144,24 @@ const LAYOUT_OPTIONS: Array<{ value: LayoutMode; label: string }> = [
   { value: "list", label: "Matrix" },
   { value: "two-sided", label: "Two-sided" }
 ];
+
+const LAYOUT_LABEL_KEYS = {
+  single: "layout.single",
+  radial: "layout.radial",
+  list: "layout.matrix",
+  "two-sided": "layout.twoSided"
+} satisfies Record<LayoutMode, I18nKey>;
+
+const RELATIONSHIP_LABEL_KEYS = {
+  related: "relationship.related",
+  depends_on: "relationship.dependsOn",
+  extends: "relationship.extends",
+  supports: "relationship.supports",
+  contradicts: "relationship.contradicts",
+  duplicates: "relationship.duplicates",
+  references: "relationship.references",
+  todo: "relationship.todo"
+} satisfies Record<EdgeRelationship, I18nKey>;
 
 function titleFromTurn(turn: Turn): string {
   const trimmed = turn.userText.trim();
@@ -408,6 +429,7 @@ function RelationshipTypeSelect({
   value: EdgeRelationship;
   onChange: (relationship: EdgeRelationship) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="relationship-type-select">
       <span
@@ -418,7 +440,7 @@ function RelationshipTypeSelect({
       <select value={value} onChange={(event) => onChange(event.currentTarget.value as EdgeRelationship)}>
         {RELATIONSHIP_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
-            {option.label}
+            {t(RELATIONSHIP_LABEL_KEYS[option.value])}
           </option>
         ))}
       </select>
@@ -1005,6 +1027,7 @@ export function ChatMapCanvas({
   sourceTabId,
   onStatus
 }: ChatMapCanvasProps) {
+  const { t } = useI18n();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<TurnNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -2219,115 +2242,139 @@ export function ChatMapCanvas({
       </ReactFlow>
       <div className="graph-toolbar">
         <label className="layout-picker">
-          <span>Layout</span>
+          <Icon name="layout" />
+          <span>{t("toolbar.layout")}</span>
           <select
             value={layoutMode}
             onChange={(event) => applyLayout(event.currentTarget.value as LayoutMode)}
           >
             {LAYOUT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(LAYOUT_LABEL_KEYS[option.value])}
               </option>
             ))}
           </select>
         </label>
-        <button type="button" onClick={suggestLinks} disabled={suggestingLinks}>
-          {suggestingLinks ? "Suggesting..." : "Suggest Links"}
+        <button className="button-with-icon" type="button" onClick={suggestLinks} disabled={suggestingLinks}>
+          <Icon name="sparkles" />
+          <span>{suggestingLinks ? t("toolbar.suggesting") : t("toolbar.suggestLinks")}</span>
         </button>
-        <button type="button" onClick={() => setSearchOpen((open) => !open)}>
-          Search
+        <button className="button-with-icon" type="button" onClick={() => setSearchOpen((open) => !open)}>
+          <Icon name="search" />
+          <span>{t("toolbar.search")}</span>
         </button>
-        <button type="button" onClick={undoGraphChange} disabled={undoStack.length === 0}>
-          Undo
+        <button className="button-with-icon" type="button" onClick={undoGraphChange} disabled={undoStack.length === 0}>
+          <Icon name="undo" />
+          <span>{t("toolbar.undo")}</span>
         </button>
-        <button type="button" onClick={redoGraphChange} disabled={redoStack.length === 0}>
-          Redo
+        <button className="button-with-icon" type="button" onClick={redoGraphChange} disabled={redoStack.length === 0}>
+          <Icon name="redo" />
+          <span>{t("toolbar.redo")}</span>
         </button>
         <button
+          className="button-with-icon"
           type="button"
           onClick={summarizeAllNodes}
           disabled={summarizingNodeIds.size > 0}
         >
-          {summarizingNodeIds.size > 0 ? "Summarizing..." : "Summarize All"}
+          <Icon name="brain" />
+          <span>{summarizingNodeIds.size > 0 ? t("toolbar.summarizing") : t("toolbar.summarizeAll")}</span>
         </button>
         <div className="file-menu">
-          <button type="button" onClick={() => setFileMenuOpen((open) => !open)}>
-            Files
+          <button className="button-with-icon" type="button" onClick={() => setFileMenuOpen((open) => !open)}>
+            <Icon name="files" />
+            <span>{t("toolbar.files")}</span>
+            <Icon name="chevronDown" size={14} />
           </button>
           {fileMenuOpen ? (
             <div className="file-menu__panel">
               <button
+                className="button-with-icon"
                 type="button"
                 onClick={() => {
                   importInputRef.current?.click();
                   setFileMenuOpen(false);
                 }}
               >
-                Import JSON
+                <Icon name="upload" />
+                <span>{t("file.importJson")}</span>
               </button>
               <button
+                className="button-with-icon"
                 type="button"
                 onClick={() => {
                   exportJson();
                   setFileMenuOpen(false);
                 }}
               >
-                Export JSON
+                <Icon name="download" />
+                <span>{t("file.exportJson")}</span>
               </button>
               <button
+                className="button-with-icon"
                 type="button"
                 onClick={() => {
                   exportObsidianCanvas();
                   setFileMenuOpen(false);
                 }}
               >
-                Export Canvas
+                <Icon name="map" />
+                <span>{t("file.exportCanvas")}</span>
               </button>
               <button
+                className="button-with-icon"
                 type="button"
                 onClick={() => {
                   exportSvg();
                   setFileMenuOpen(false);
                 }}
               >
-                Export SVG
+                <Icon name="external" />
+                <span>{t("file.exportSvg")}</span>
               </button>
               <button
+                className="button-with-icon"
                 type="button"
                 onClick={() => {
                   void exportPng();
                   setFileMenuOpen(false);
                 }}
               >
-                Export PNG
+                <Icon name="image" />
+                <span>{t("file.exportPng")}</span>
               </button>
               <button
+                className="button-with-icon"
                 type="button"
                 onClick={() => {
                   exportMarkdown();
                   setFileMenuOpen(false);
                 }}
               >
-                Export MD
+                <Icon name="download" />
+                <span>{t("file.exportMd")}</span>
               </button>
               <button
+                className="button-with-icon"
                 type="button"
                 onClick={() => {
                   void copyMarkdown();
                   setFileMenuOpen(false);
                 }}
               >
-                Copy MD
+                <Icon name="copy" />
+                <span>{t("file.copyMd")}</span>
               </button>
               <button
                 type="button"
-                className="file-menu__danger"
+                className="button-with-icon file-menu__danger"
                 onClick={() => {
                   void resetCurrentMap();
                   setFileMenuOpen(false);
                 }}
               >
-                Reset Map
+                <Icon name="trash" />
+                <span>{t("file.resetMap")}</span>
               </button>
             </div>
           ) : null}
@@ -2343,20 +2390,20 @@ export function ChatMapCanvas({
       {searchOpen ? (
         <aside className="search-panel">
           <div className="edge-panel__header">
-            <strong>Search Map</strong>
+            <strong>{t("search.title")}</strong>
             <button type="button" onClick={() => setSearchOpen(false)}>
-              Close
+              {t("search.close")}
             </button>
           </div>
           <input
             value={searchQuery}
-            placeholder="Search title, summary, tag..."
+            placeholder={t("search.placeholder")}
             onChange={(event) => setSearchQuery(event.currentTarget.value)}
             autoFocus
           />
           <div className="search-results">
             {searchQuery.trim() && searchResults.length === 0 ? (
-              <p className="panel-note">No matching nodes.</p>
+              <p className="panel-note">{t("search.empty")}</p>
             ) : null}
             {searchResults.map((node) => (
               <button type="button" key={node.id} onClick={() => focusNode(node.id)}>
@@ -2370,13 +2417,13 @@ export function ChatMapCanvas({
       {pendingSuggestedEdges.length > 0 ? (
         <aside className="suggestion-panel">
           <div className="suggestion-panel__header">
-            <strong>AI Link Suggestions</strong>
+            <strong>{t("suggestions.title")}</strong>
             <div>
               <button type="button" onClick={acceptAllPendingSuggestions}>
-                Accept All
+                {t("suggestions.acceptAll")}
               </button>
               <button type="button" onClick={clearPendingSuggestions}>
-                Clear
+                {t("suggestions.clear")}
               </button>
             </div>
           </div>

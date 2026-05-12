@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ExtractedTurnsMessage, Turn } from "../shared/types";
 import { isChatMapMessage, requestTurnsFromActiveTab, setFloatingPanelInTab } from "../shared/messaging";
+import { Icon } from "./components/Icon";
 import { ChatMapCanvas } from "./graph/ChatMapCanvas";
+import { useI18n } from "./i18n/useI18n";
+import { applyTheme, loadTheme, normalizeTheme, THEME_STORAGE_KEY } from "./settings/theme-storage";
 import { saveTurnsToIndexedDb } from "./storage/turn-storage";
 
 type AppProps = {
@@ -16,10 +19,11 @@ function sourceTabIdFromUrl(): number | undefined {
 }
 
 export function App({ mode = "side-panel" }: AppProps) {
+  const { t } = useI18n();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [conversationId, setConversationId] = useState("current");
   const [conversationTitle, setConversationTitle] = useState("Current conversation");
-  const [status, setStatus] = useState("Waiting for ChatGPT conversation...");
+  const [status, setStatus] = useState("");
   const [debugOpen, setDebugOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [floatingEnabled, setFloatingEnabled] = useState(false);
@@ -34,42 +38,42 @@ export function App({ mode = "side-panel" }: AppProps) {
     setConversationId(message.conversationId);
     setConversationTitle(message.conversationTitle);
     void saveTurnsToIndexedDb(message.conversationId, message.conversationTitle, message.turns).catch(() => {
-      setStatus("Turns loaded, but IndexedDB caching failed.");
+      setStatus(t("app.status.cacheFailed"));
     });
     const meta = message.harvestMeta;
     setStatus(
       meta
-        ? `${message.turns.length} turns mapped via ${meta.source}${
-            meta.source === "deep-scan" ? ` after ${meta.scannedSteps} steps` : ""
-          }`
-        : `${message.turns.length} loaded turns mapped`
+        ? meta.source === "deep-scan"
+          ? t("app.status.mappedDeepScan", { count: message.turns.length, steps: meta.scannedSteps })
+          : t("app.status.mappedVia", { count: message.turns.length, source: meta.source })
+        : t("app.status.loadedTurns", { count: message.turns.length })
     );
-  }, []);
+  }, [t]);
 
   const refreshTurns = useCallback(async () => {
-    setStatus("Reading the full ChatGPT conversation...");
+    setStatus(t("app.status.reading"));
     const message = await requestTurnsFromActiveTab({ ensureFull: true, tabId: sourceTabId });
     if (message?.type === "CHATMAP_TURNS_UPDATED") {
       applyTurnsMessage(message);
     } else {
-      setStatus("Open a ChatGPT conversation tab, then refresh ChatMap.");
+      setStatus(t("app.status.openConversation"));
     }
-  }, [applyTurnsMessage, sourceTabId]);
+  }, [applyTurnsMessage, sourceTabId, t]);
 
   const deepScanTurns = useCallback(async () => {
-    setStatus("Deep scanning loaded ChatGPT history...");
+    setStatus(t("app.status.deepScanning"));
     const message = await requestTurnsFromActiveTab({ harvest: true, tabId: sourceTabId });
     if (message?.type === "CHATMAP_TURNS_UPDATED") {
       applyTurnsMessage(message);
     } else {
-      setStatus("Deep scan could not reach the active ChatGPT tab.");
+      setStatus(t("app.status.deepScanFailed"));
     }
-  }, [applyTurnsMessage, sourceTabId]);
+  }, [applyTurnsMessage, sourceTabId, t]);
 
   const openFullPage = useCallback(async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab.id) {
-      setStatus("No active ChatGPT tab was found.");
+      setStatus(t("app.status.noActiveTab"));
       return;
     }
     setSourceTabId(tab.id);
@@ -77,7 +81,7 @@ export function App({ mode = "side-panel" }: AppProps) {
       url: chrome.runtime.getURL(`src/full-page/index.html?sourceTabId=${tab.id}`)
     });
     setViewMenuOpen(false);
-  }, []);
+  }, [t]);
 
   const toggleFloatingPanel = useCallback(async () => {
     const nextEnabled = !floatingEnabled;
@@ -85,12 +89,12 @@ export function App({ mode = "side-panel" }: AppProps) {
     if (ok) {
       setFloatingEnabled(nextEnabled);
       await chrome.storage.local.set({ "chatmap.floatingPanel.enabled": nextEnabled });
-      setStatus(`Floating panel ${nextEnabled ? "enabled" : "disabled"}`);
+      setStatus(t(nextEnabled ? "app.status.floatEnabled" : "app.status.floatDisabled"));
       setViewMenuOpen(false);
     } else {
-      setStatus("Could not reach the ChatGPT tab for floating panel.");
+      setStatus(t("app.status.floatFailed"));
     }
-  }, [floatingEnabled, sourceTabId]);
+  }, [floatingEnabled, sourceTabId, t]);
 
   const openSettingsPage = useCallback(async () => {
     await chrome.runtime.openOptionsPage();
@@ -100,6 +104,35 @@ export function App({ mode = "side-panel" }: AppProps) {
     void chrome.storage.local.get("chatmap.floatingPanel.enabled").then((result) => {
       setFloatingEnabled(Boolean(result["chatmap.floatingPanel.enabled"]));
     });
+  }, []);
+
+  useEffect(() => {
+    setStatus((current) => current || t("app.status.waiting"));
+  }, [t]);
+
+  useEffect(() => {
+    let currentTheme = normalizeTheme(undefined);
+    void loadTheme().then((theme) => {
+      currentTheme = theme;
+      applyTheme(theme);
+    });
+
+    const listener = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+      if (areaName !== "local" || !changes[THEME_STORAGE_KEY]) return;
+      currentTheme = normalizeTheme(changes[THEME_STORAGE_KEY].newValue);
+      applyTheme(currentTheme);
+    };
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const mediaListener = () => {
+      if (currentTheme === "browser") applyTheme(currentTheme);
+    };
+
+    chrome.storage.onChanged.addListener(listener);
+    media?.addEventListener?.("change", mediaListener);
+    return () => {
+      chrome.storage.onChanged.removeListener(listener);
+      media?.removeEventListener?.("change", mediaListener);
+    };
   }, []);
 
   useEffect(() => {
@@ -118,44 +151,59 @@ export function App({ mode = "side-panel" }: AppProps) {
 
   const hasTurns = turns.length > 0;
   const subtitle = useMemo(
-    () => (hasTurns ? "Click a node to jump back to ChatGPT." : "No complete turns found yet."),
-    [hasTurns]
+    () => (hasTurns ? t("app.subtitle.hasTurns") : t("app.subtitle.noTurns")),
+    [hasTurns, t]
   );
 
   return (
     <main className="app-shell">
       <header className="app-header">
-        <div>
-          <h1>ChatMap</h1>
-          <p>{subtitle}</p>
+        <div className="app-brand">
+          <div className="app-brand__mark" aria-hidden="true">
+            <Icon name="map" size={20} />
+          </div>
+          <div>
+            <div className="app-kicker">{t("app.kicker")}</div>
+            <h1>ChatMap</h1>
+            <p>{subtitle}</p>
+          </div>
         </div>
         <div className="app-actions">
-          <button type="button" onClick={refreshTurns}>
-            Refresh
+          <button className="button-with-icon" type="button" onClick={refreshTurns}>
+            <Icon name="refresh" />
+            <span>{t("app.action.refresh")}</span>
           </button>
-          <button type="button" onClick={deepScanTurns}>
-            Deep Scan
+          <button className="button-with-icon" type="button" onClick={deepScanTurns}>
+            <Icon name="scan" />
+            <span>{t("app.action.deepScan")}</span>
           </button>
-          <button type="button" onClick={openSettingsPage}>
-            Settings
+          <button className="button-with-icon" type="button" onClick={openSettingsPage}>
+            <Icon name="settings" />
+            <span>{t("app.action.settings")}</span>
           </button>
-          <button type="button" onClick={() => setDebugOpen((open) => !open)}>
-            Debug
+          <button className="button-with-icon" type="button" onClick={() => setDebugOpen((open) => !open)}>
+            <Icon name="bug" />
+            <span>{t("app.action.debug")}</span>
           </button>
           <div className="view-menu">
-            <button type="button" onClick={() => setViewMenuOpen((open) => !open)}>
-              View
+            <button className="button-with-icon" type="button" onClick={() => setViewMenuOpen((open) => !open)}>
+              <Icon name="view" />
+              <span>{t("app.action.view")}</span>
+              <Icon name="chevronDown" size={14} />
             </button>
             {viewMenuOpen ? (
               <div className="view-menu__panel">
-                <button type="button" disabled={mode === "side-panel"}>
-                  Side Panel{mode === "side-panel" ? " · Current" : ""}
+                <button className="button-with-icon" type="button" disabled={mode === "side-panel"}>
+                  <Icon name="panel" />
+                  <span>{t("app.view.sidePanel")}{mode === "side-panel" ? ` · ${t("app.view.current")}` : ""}</span>
                 </button>
-                <button type="button" onClick={openFullPage} disabled={mode === "full-page"}>
-                  Full Page{mode === "full-page" ? " · Current" : ""}
+                <button className="button-with-icon" type="button" onClick={openFullPage} disabled={mode === "full-page"}>
+                  <Icon name="maximize" />
+                  <span>{t("app.view.fullPage")}{mode === "full-page" ? ` · ${t("app.view.current")}` : ""}</span>
                 </button>
-                <button type="button" onClick={toggleFloatingPanel}>
-                  {floatingEnabled ? "Hide Float" : "Show Float"}
+                <button className="button-with-icon" type="button" onClick={toggleFloatingPanel}>
+                  <Icon name="float" />
+                  <span>{t(floatingEnabled ? "app.view.hideFloat" : "app.view.showFloat")}</span>
                 </button>
               </div>
             ) : null}
@@ -166,12 +214,12 @@ export function App({ mode = "side-panel" }: AppProps) {
       <section className="status-bar">{status}</section>
       {debugOpen ? (
         <section className="debug-panel">
-          <span>Conversation: {conversationTitle}</span>
-          <span>ID: {conversationId}</span>
-          <span>Turns: {turns.length}</span>
-          <span>Source: {lastMessage?.harvestMeta?.source ?? "unknown"}</span>
-          <span>Steps: {lastMessage?.harvestMeta?.scannedSteps ?? 0}</span>
-          <span>Scroll: {lastMessage?.harvestMeta?.scrollContainer ?? "n/a"}</span>
+          <span>{t("debug.conversation")}: {conversationTitle}</span>
+          <span>{t("debug.id")}: {conversationId}</span>
+          <span>{t("debug.turns")}: {turns.length}</span>
+          <span>{t("debug.source")}: {lastMessage?.harvestMeta?.source ?? "unknown"}</span>
+          <span>{t("debug.steps")}: {lastMessage?.harvestMeta?.scannedSteps ?? 0}</span>
+          <span>{t("debug.scroll")}: {lastMessage?.harvestMeta?.scrollContainer ?? "n/a"}</span>
         </section>
       ) : null}
 

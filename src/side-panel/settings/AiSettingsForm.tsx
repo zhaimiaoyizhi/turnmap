@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { testAiConnection } from "../ai/openai-compatible";
+import { useI18n } from "../i18n/useI18n";
 import {
   defaultsForProvider,
   loadAiSettings,
@@ -14,15 +15,18 @@ type AiSettingsFormProps = {
 };
 
 export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps) {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AiSettings>(defaultsForProvider("openai"));
-  const [status, setStatus] = useState(
-    "Settings are stored locally. AI features send selected conversation text to your configured provider."
-  );
+  const [status, setStatus] = useState("");
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     void loadAiSettings().then(setSettings);
   }, []);
+
+  useEffect(() => {
+    setStatus((current) => current || t("ai.status.local"));
+  }, [t]);
 
   const updateProvider = useCallback((provider: AiProvider) => {
     setSettings((current) => ({
@@ -41,47 +45,47 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
 
   const save = useCallback(async () => {
     await saveAiSettings(settings);
-    setStatus("Saved.");
-    onSaved?.("AI settings saved.");
-  }, [onSaved, settings]);
+    setStatus(t("ai.status.saved"));
+    onSaved?.(t("ai.status.aiSaved"));
+  }, [onSaved, settings, t]);
 
   const testConnection = useCallback(async () => {
     setTesting(true);
-    setStatus("Testing connection...");
+    setStatus(t("ai.status.testing"));
 
     try {
       await testAiConnection(settings);
       await saveAiSettings(settings);
-      setStatus("Connection succeeded. Settings saved.");
-      onSaved?.("AI connection succeeded. Settings saved.");
+      setStatus(t("ai.status.connectionSaved"));
+      onSaved?.(t("ai.status.connectionSavedGlobal"));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Connection test failed.");
+      setStatus(error instanceof Error ? error.message : t("ai.status.failed"));
     } finally {
       setTesting(false);
     }
-  }, [onSaved, settings]);
+  }, [onSaved, settings, t]);
 
   return (
     <section className={compact ? "settings-section settings-section--compact" : "settings-section"}>
       <div className="settings-section__header">
-        <strong>AI Provider</strong>
-        <span>OpenAI-compatible chat completions</span>
+        <strong>{t("ai.title")}</strong>
+        <span>{t("ai.subtitle")}</span>
       </div>
 
       <label>
-        Provider
+        {t("ai.provider")}
         <select
           value={settings.provider}
           onChange={(event) => updateProvider(event.currentTarget.value as AiProvider)}
         >
           <option value="openai">OpenAI</option>
           <option value="deepseek">DeepSeek</option>
-          <option value="custom">Custom compatible</option>
+          <option value="custom">{t("ai.customCompatible")}</option>
         </select>
       </label>
 
       <label>
-        Base URL
+        {t("ai.baseUrl")}
         <input
           value={settings.baseUrl}
           onChange={(event) => updateField("baseUrl", event.currentTarget.value)}
@@ -90,7 +94,7 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
       </label>
 
       <label>
-        Model
+        {t("ai.model")}
         <input
           value={settings.model}
           onChange={(event) => updateField("model", event.currentTarget.value)}
@@ -99,18 +103,17 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
       </label>
 
       <label>
-        API Key
+        {t("ai.apiKey")}
         <input
           type="password"
           value={settings.apiKey}
           onChange={(event) => updateField("apiKey", event.currentTarget.value)}
-          placeholder="Stored locally"
+          placeholder={t("ai.apiKeyPlaceholder")}
         />
       </label>
 
       <p>
-        API keys are saved in this browser's extension storage. ChatMap sends conversation text only when
-        you run AI features or enable auto summarize.
+        {t("ai.privacy")}
       </p>
 
       <label className="settings-panel__check">
@@ -119,17 +122,17 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
           checked={settings.autoSummarize}
           onChange={(event) => updateField("autoSummarize", event.currentTarget.checked)}
         />
-        Auto summarize new/default nodes
+        {t("ai.autoSummarize")}
       </label>
 
       <p>{status}</p>
 
       <div className="settings-panel__actions">
         <button type="button" onClick={save}>
-          Save
+          {t("ai.save")}
         </button>
         <button type="button" onClick={testConnection} disabled={testing}>
-          {testing ? "Testing..." : "Test Connection"}
+          {testing ? t("ai.testing") : t("ai.test")}
         </button>
       </div>
     </section>

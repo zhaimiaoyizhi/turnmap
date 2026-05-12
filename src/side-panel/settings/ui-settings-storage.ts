@@ -1,4 +1,5 @@
 import { loadDefaultLayout, saveDefaultLayout, type LayoutMode } from "../graph/graph-storage";
+import { DEFAULT_THEME, THEME_STORAGE_KEY, normalizeTheme, type ThemeMode } from "./theme-storage";
 
 const FLOATING_PANEL_ENABLED_KEY = "chatmap.floatingPanel.enabled";
 const LAUNCHER_ENABLED_KEY = "chatmap.launcher.enabled";
@@ -8,6 +9,7 @@ const IGNORED_VERSION_KEY = "chatmap.updateNotice.ignoredVersion";
 
 export type UiSettings = {
   defaultLayout: LayoutMode;
+  theme: ThemeMode;
   floatingPanelEnabled: boolean;
   launcherEnabled: boolean;
   updateNoticeEnabled: boolean;
@@ -23,12 +25,14 @@ export async function loadUiSettings(): Promise<UiSettings> {
       LAUNCHER_ENABLED_KEY,
       UPDATE_NOTICE_ENABLED_KEY,
       UPDATE_NOTICE_PRERELEASE_KEY,
-      IGNORED_VERSION_KEY
+      IGNORED_VERSION_KEY,
+      THEME_STORAGE_KEY
     ])
   ]);
 
   return {
     defaultLayout,
+    theme: normalizeTheme(stored[THEME_STORAGE_KEY] ?? DEFAULT_THEME),
     floatingPanelEnabled: Boolean(stored[FLOATING_PANEL_ENABLED_KEY]),
     launcherEnabled: stored[LAUNCHER_ENABLED_KEY] !== false,
     updateNoticeEnabled: stored[UPDATE_NOTICE_ENABLED_KEY] !== false,
@@ -45,7 +49,8 @@ export async function saveUiSettings(settings: UiSettings): Promise<void> {
       [LAUNCHER_ENABLED_KEY]: settings.launcherEnabled,
       [UPDATE_NOTICE_ENABLED_KEY]: settings.updateNoticeEnabled,
       [UPDATE_NOTICE_PRERELEASE_KEY]: settings.includePrereleaseUpdates,
-      [IGNORED_VERSION_KEY]: settings.ignoredVersion.trim()
+      [IGNORED_VERSION_KEY]: settings.ignoredVersion.trim(),
+      [THEME_STORAGE_KEY]: settings.theme
     })
   ]);
 }

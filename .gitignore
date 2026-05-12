@@ -1,6 +1,7 @@
 node_modules/
 dist/
 release/
+.tools/
 .env
 .env.*
 *.log
