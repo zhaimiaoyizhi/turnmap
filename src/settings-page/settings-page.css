@@ -1,0 +1,96 @@
+.settings-page {
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 1120px;
+  min-height: 100%;
+  padding: 28px;
+}
+
+.settings-page__header {
+  align-items: center;
+  border-bottom: 1px solid #ded8ce;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding-bottom: 18px;
+}
+
+.settings-page__header h1 {
+  font-size: 26px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.settings-page__header p {
+  color: #5c6460;
+  margin: 6px 0 0;
+}
+
+.settings-page__grid {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.settings-section {
+  background: #fffefb;
+  border: 1px solid #d1d9d4;
+  border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(31, 41, 55, 0.1);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.settings-section--compact {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.settings-section__header {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-section__header strong {
+  font-size: 16px;
+}
+
+.settings-section__header span {
+  color: #5c6460;
+  font-size: 12px;
+}
+
+.settings-section label {
+  color: #49534f;
+  display: grid;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.settings-section input,
+.settings-section select {
+  border: 1px solid #bec7bc;
+  border-radius: 6px;
+  color: #1f2937;
+  font: inherit;
+  padding: 8px;
+}
+
+.settings-section p {
+  color: #5c6460;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.settings-page__status {
+  background: #edf3f0;
+  border: 1px solid #d1d9d4;
+  border-radius: 8px;
+  color: #2f5f55;
+  padding: 12px 14px;
+}
