@@ -21,6 +21,13 @@ import { Icon } from "../components/Icon";
 import type { I18nKey } from "../i18n/i18n-storage";
 import { useI18n } from "../i18n/useI18n";
 import { loadAiSettings } from "../settings/ai-settings-storage";
+import { applyTheme, normalizeTheme, resolveTheme, type ThemeMode } from "../settings/theme-storage";
+import {
+  applyNodeColorRendering,
+  loadUiSettings,
+  saveUiSettings,
+  type NodeColorRenderMode
+} from "../settings/ui-settings-storage";
 import type { ApiTaskKind, ApiTaskStatus } from "../task-log";
 import { TurnNode } from "./TurnNode";
 import {
@@ -35,6 +42,7 @@ import {
   createZipFromTextFiles,
   graphToObsidianVaultMarkdownFiles,
   graphToOpml,
+  type ExportAppearance,
   type ExportEdge,
   type ExportNode
 } from "./export-formats";
@@ -52,6 +60,7 @@ type TurnMapCanvasProps = {
   conversationTitle: string;
   turns: Turn[];
   sourceTabId?: number;
+  rebuildRequest?: number;
   onStatus?: (status: string) => void;
   onTaskStatus?: (entry: {
     id: string;
@@ -129,6 +138,7 @@ type ExportedGraph = {
     hiddenAutoEdgeIds?: string[];
     hiddenNodeIds?: string[];
   };
+  appearance?: ExportAppearance;
   nodes?: Array<{
     id?: string;
     position?: { x?: number; y?: number };
@@ -154,6 +164,15 @@ type ExportedGraph = {
     createdBy?: "ai" | "user";
     isAuto?: boolean;
   }>;
+};
+
+type GraphAppearance = {
+  theme: ThemeMode;
+  resolvedTheme: Exclude<ThemeMode, "browser">;
+  nodeColorRendering: {
+    mode: NodeColorRenderMode;
+    strength: number;
+  };
 };
 
 const nodeTypes = {
@@ -637,6 +656,56 @@ function downloadBlobFile(filename: string, blob: Blob): void {
   URL.revokeObjectURL(url);
 }
 
+function normalizeNodeColorRenderMode(value: unknown): NodeColorRenderMode {
+  return value === "solid" ? "solid" : "gradient";
+}
+
+function normalizeNodeColorRenderStrength(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return 70;
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+async function loadExportAppearance(): Promise<GraphAppearance> {
+  const settings = await loadUiSettings();
+  const theme = normalizeTheme(settings.theme);
+  return {
+    theme,
+    resolvedTheme: resolveTheme(theme),
+    nodeColorRendering: {
+      mode: normalizeNodeColorRenderMode(settings.nodeColorRenderMode),
+      strength: normalizeNodeColorRenderStrength(settings.nodeColorRenderStrength)
+    }
+  };
+}
+
+function normalizeImportedAppearance(value: ExportedGraph["appearance"]): GraphAppearance | null {
+  if (!value) return null;
+  const theme = normalizeTheme(value.theme);
+  return {
+    theme,
+    resolvedTheme: resolveTheme(theme),
+    nodeColorRendering: {
+      mode: normalizeNodeColorRenderMode(value.nodeColorRendering?.mode),
+      strength: normalizeNodeColorRenderStrength(value.nodeColorRendering?.strength)
+    }
+  };
+}
+
+async function applyImportedAppearance(appearance: GraphAppearance | null): Promise<void> {
+  if (!appearance) return;
+  const settings = await loadUiSettings();
+  const nextSettings = {
+    ...settings,
+    theme: appearance.theme,
+    nodeColorRenderMode: appearance.nodeColorRendering.mode,
+    nodeColorRenderStrength: appearance.nodeColorRendering.strength
+  };
+  await saveUiSettings(nextSettings);
+  applyTheme(nextSettings.theme);
+  applyNodeColorRendering(nextSettings);
+}
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -754,10 +823,11 @@ function serializeGraph(
   layoutMode: LayoutMode,
   hiddenRoot: boolean,
   hiddenAutoEdgeIds: string[],
-  hiddenNodeIds: string[]
+  hiddenNodeIds: string[],
+  appearance?: GraphAppearance
 ): string {
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     conversation: {
       id: conversationId,
@@ -770,6 +840,7 @@ function serializeGraph(
       hiddenAutoEdgeIds,
       hiddenNodeIds
     },
+    appearance,
     turns,
     nodes: nodes.map((node) => ({
       id: node.id,
@@ -807,13 +878,17 @@ function serializeGraph(
 function graphToObsidianCanvas(
   conversationTitle: string,
   nodes: Node<TurnNodeData>[],
-  edges: Edge[]
+  edges: Edge[],
+  appearance?: GraphAppearance
 ): string {
   const nodeText = (node: Node<TurnNodeData>): string => {
     const metadata = [
       node.data.turn ? `Turn: ${node.data.turn.turnIndex + 1}` : "",
       node.data.status ? `Status: ${node.data.status}` : "",
-      node.data.tags?.length ? `Tags: ${node.data.tags.map((tag) => `#${tag}`).join(" ")}` : ""
+      node.data.tags?.length ? `Tags: ${node.data.tags.map((tag) => `#${tag}`).join(" ")}` : "",
+      node.data.color ? `Color: ${node.data.color}` : "",
+      typeof node.data.collapsed === "boolean" ? `Collapsed: ${node.data.collapsed}` : "",
+      node.data.important ? "Important: true" : ""
     ].filter(Boolean);
 
     return [
@@ -825,15 +900,19 @@ function graphToObsidianCanvas(
       .join("\n\n");
   };
 
-  const canvasNodes = nodes.map((node) => ({
-    id: node.id,
-    type: "text",
-    text: nodeText(node),
-    x: Math.round(node.position.x),
-    y: Math.round(node.position.y),
-    width: node.data.isConversationRoot ? 320 : 300,
-    height: node.data.isConversationRoot ? 180 : 220
-  }));
+  const canvasNodes = nodes.map((node) => {
+    const color = colorValue(node.data.color);
+    return {
+      id: node.id,
+      type: "text",
+      text: nodeText(node),
+      x: Math.round(node.position.x),
+      y: Math.round(node.position.y),
+      width: node.data.isConversationRoot ? 320 : 300,
+      height: node.data.collapsed ? 120 : node.data.isConversationRoot ? 180 : 220,
+      color
+    };
+  });
 
   const canvasEdges = edges.map((edge) => {
     const relationship = edgeRelationship(edge);
@@ -862,7 +941,8 @@ function graphToObsidianCanvas(
       edges: canvasEdges,
       metadata: {
         name: conversationTitle,
-        source: "TurnMap"
+        source: "TurnMap",
+        appearance
       }
     },
     null,
@@ -870,18 +950,79 @@ function graphToObsidianCanvas(
   );
 }
 
+const SVG_THEME_COLORS: Record<Exclude<ThemeMode, "browser">, {
+  background: string;
+  node: string;
+  root: string;
+  border: string;
+  borderStrong: string;
+  text: string;
+  muted: string;
+  rootText: string;
+  labelStroke: string;
+}> = {
+  day: {
+    background: "#f6f9fd",
+    node: "#ffffff",
+    root: "#edf8ff",
+    border: "#d7e3ec",
+    borderStrong: "#a9c3d4",
+    text: "#102033",
+    muted: "#5c6f82",
+    rootText: "#102033",
+    labelStroke: "#f6f9fd"
+  },
+  night: {
+    background: "#0b111a",
+    node: "#121b27",
+    root: "#112a3b",
+    border: "#2f4055",
+    borderStrong: "#4e6680",
+    text: "#eef6ff",
+    muted: "#b6c6d8",
+    rootText: "#eef6ff",
+    labelStroke: "#0b111a"
+  },
+  "eye-care": {
+    background: "#f3f8ef",
+    node: "#fffffa",
+    root: "#e4f3e6",
+    border: "#cdddc5",
+    borderStrong: "#9fbea0",
+    text: "#1c2c20",
+    muted: "#586d58",
+    rootText: "#1c2c20",
+    labelStroke: "#f3f8ef"
+  }
+};
+
+function svgNodeHeight(node: Node<TurnNodeData>): number {
+  if (node.data.collapsed) return node.data.isConversationRoot ? 118 : 108;
+  return node.data.isConversationRoot ? 150 : 190;
+}
+
+function svgColorMixStrength(appearance?: GraphAppearance): { fillOpacity: number; strokeOpacity: number; shadowOpacity: number } {
+  const strength = normalizeNodeColorRenderStrength(appearance?.nodeColorRendering.strength);
+  return {
+    fillOpacity: 0.08 + strength * 0.0024,
+    strokeOpacity: 0.2 + strength * 0.0055,
+    shadowOpacity: 0.06 + strength * 0.0024
+  };
+}
+
 function graphToSvg(
   conversationTitle: string,
   nodes: Node<TurnNodeData>[],
-  edges: Edge[]
+  edges: Edge[],
+  appearance?: GraphAppearance
 ): string {
   const nodeWidth = 300;
-  const nodeHeight = 190;
-  const rootHeight = 150;
   const padding = 90;
+  const theme = SVG_THEME_COLORS[appearance?.resolvedTheme ?? "day"];
+  const colorMix = svgColorMixStrength(appearance);
   const bounds = nodes.reduce(
     (acc, node) => {
-      const height = node.data.isConversationRoot ? rootHeight : nodeHeight;
+      const height = svgNodeHeight(node);
       return {
         minX: Math.min(acc.minX, node.position.x),
         minY: Math.min(acc.minY, node.position.y),
@@ -889,7 +1030,7 @@ function graphToSvg(
         maxY: Math.max(acc.maxY, node.position.y + height)
       };
     },
-    { minX: 0, minY: 0, maxX: nodeWidth, maxY: nodeHeight }
+    { minX: 0, minY: 0, maxX: nodeWidth, maxY: 190 }
   );
   const offsetX = padding - bounds.minX;
   const offsetY = padding - bounds.minY;
@@ -902,8 +1043,8 @@ function graphToSvg(
       const source = nodeById.get(edge.source);
       const target = nodeById.get(edge.target);
       if (!source || !target) return "";
-      const sourceHeight = source.data.isConversationRoot ? rootHeight : nodeHeight;
-      const targetHeight = target.data.isConversationRoot ? rootHeight : nodeHeight;
+      const sourceHeight = svgNodeHeight(source);
+      const targetHeight = svgNodeHeight(target);
       const relationship = edgeRelationship(edge);
       const data = edge.data as RelationshipEdgeData | undefined;
       const x1 = source.position.x + offsetX + nodeWidth;
@@ -921,17 +1062,32 @@ function graphToSvg(
     })
     .join("");
 
+  const nodeGradients = nodes
+    .map((node, index) => {
+      const accent = colorValue(node.data.color);
+      if (!accent) return "";
+      if (appearance?.nodeColorRendering.mode === "solid") return "";
+      return `
+    <linearGradient id="node-accent-${index}" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${accent}" stop-opacity="${colorMix.fillOpacity}" />
+      <stop offset="58%" stop-color="${theme.node}" stop-opacity="1" />
+      <stop offset="100%" stop-color="${theme.node}" stop-opacity="1" />
+    </linearGradient>`;
+    })
+    .join("");
+
   const nodeMarkup = nodes
     .map((node, index) => {
       const isRoot = Boolean(node.data.isConversationRoot);
+      const accent = colorValue(node.data.color);
       const x = node.position.x + offsetX;
       const y = node.position.y + offsetY;
-      const height = isRoot ? rootHeight : nodeHeight;
+      const height = svgNodeHeight(node);
       const textX = x + 18;
       const textWidth = nodeWidth - 36;
       const clipId = `node-text-clip-${index}`;
-      const titleLines = wrapText(node.data.title, textWidth, 14, isRoot ? 3 : 2);
-      const summaryLines = wrapText(node.data.summary, textWidth, 12, isRoot ? 3 : 5);
+      const titleLines = wrapText(node.data.title, textWidth, 14, node.data.collapsed ? 1 : isRoot ? 3 : 2);
+      const summaryLines = wrapText(node.data.summary, textWidth, 12, node.data.collapsed ? 1 : isRoot ? 3 : 5);
       const titleMarkup = titleLines
         .map(
           (line, index) =>
@@ -945,15 +1101,26 @@ function graphToSvg(
             `<tspan x="${textX}" y="${summaryStart + index * 16}">${escapeXml(line)}</tspan>`
         )
         .join("");
+      const fill = accent
+        ? appearance?.nodeColorRendering.mode === "solid"
+          ? accent
+          : `url(#node-accent-${index})`
+        : isRoot
+          ? theme.root
+          : theme.node;
+      const fillOpacity = accent && appearance?.nodeColorRendering.mode === "solid" ? colorMix.fillOpacity : 1;
+      const stroke = accent ?? (isRoot ? theme.borderStrong : theme.border);
+      const strokeWidth = node.data.important ? 3 : 1;
+      const shadowColor = accent ?? "#000000";
+      const shadowOpacity = node.data.important ? colorMix.shadowOpacity : 0.08;
 
       return `
     <g>
+      ${node.data.important ? `<ellipse cx="${x + nodeWidth / 2}" cy="${y + height / 2}" rx="${nodeWidth / 2 + 12}" ry="${height / 2 + 12}" fill="${shadowColor}" opacity="${shadowOpacity}" />` : ""}
       <clipPath id="${clipId}">
         <rect x="${x + 12}" y="${y + 10}" width="${nodeWidth - 24}" height="${height - 20}" rx="6" />
       </clipPath>
-      <rect x="${x}" y="${y}" width="${nodeWidth}" height="${height}" rx="8" class="${
-        isRoot ? "node-root" : "node"
-      }" />
+      <rect x="${x}" y="${y}" width="${nodeWidth}" height="${height}" rx="8" fill="${fill}" fill-opacity="${fillOpacity}" stroke="${stroke}" stroke-opacity="${accent ? colorMix.strokeOpacity : 1}" stroke-width="${strokeWidth}" class="${isRoot ? "node-root" : "node"}" />
       <g clip-path="url(#${clipId})">
         <text x="${textX}" y="${y + 26}" class="${isRoot ? "meta-root" : "meta"}">${
           isRoot ? "CONVERSATION" : `TURN ${node.data.turn ? node.data.turn.turnIndex + 1 : ""}`
@@ -974,17 +1141,18 @@ function graphToSvg(
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
     </marker>
     <style>
-      .bg { fill: #f7f4ef; }
-      .node { fill: #fffefb; stroke: #d1d9d4; stroke-width: 1; filter: drop-shadow(0 6px 12px rgba(31,41,55,0.08)); }
-      .node-root { fill: #1f2937; stroke: #1f2937; stroke-width: 1; }
-      .meta { fill: #68736e; font: 700 11px Inter, Arial, sans-serif; letter-spacing: 0; }
-      .meta-root { fill: #ffffff; font: 700 11px Inter, Arial, sans-serif; letter-spacing: 0; }
-      .title { fill: #17211d; font: 700 14px Inter, Arial, sans-serif; }
-      .title-root { fill: #ffffff; font: 700 14px Inter, Arial, sans-serif; }
-      .summary { fill: #52605b; font: 12px Inter, Arial, sans-serif; }
-      .summary-root { fill: #ffffff; font: 12px Inter, Arial, sans-serif; }
-      .edge-label { fill: #64748b; font: 11px Inter, Arial, sans-serif; paint-order: stroke; stroke: #f7f4ef; stroke-width: 4px; stroke-linejoin: round; }
+      .bg { fill: ${theme.background}; }
+      .node { filter: drop-shadow(0 6px 12px rgba(31,41,55,0.08)); }
+      .node-root { filter: drop-shadow(0 8px 18px rgba(31,41,55,0.1)); }
+      .meta { fill: ${theme.muted}; font: 700 11px Inter, Arial, sans-serif; letter-spacing: 0; }
+      .meta-root { fill: ${theme.rootText}; font: 700 11px Inter, Arial, sans-serif; letter-spacing: 0; }
+      .title { fill: ${theme.text}; font: 700 14px Inter, Arial, sans-serif; }
+      .title-root { fill: ${theme.rootText}; font: 700 14px Inter, Arial, sans-serif; }
+      .summary { fill: ${theme.muted}; font: 12px Inter, Arial, sans-serif; }
+      .summary-root { fill: ${theme.rootText}; font: 12px Inter, Arial, sans-serif; }
+      .edge-label { fill: ${theme.muted}; font: 11px Inter, Arial, sans-serif; paint-order: stroke; stroke: ${theme.labelStroke}; stroke-width: 4px; stroke-linejoin: round; }
     </style>
+    ${nodeGradients}
   </defs>
   <rect class="bg" width="100%" height="100%" />
   ${edgeMarkup}
@@ -1202,6 +1370,7 @@ export function TurnMapCanvas({
   conversationTitle,
   turns,
   sourceTabId,
+  rebuildRequest = 0,
   onStatus,
   onTaskStatus
 }: TurnMapCanvasProps) {
@@ -1229,6 +1398,7 @@ export function TurnMapCanvas({
   const lastHistorySnapshot = useRef<GraphSnapshot | null>(null);
   const restoringHistory = useRef(false);
   const loadedConversationId = useRef<string | null>(null);
+  const appliedRebuildRequest = useRef(0);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const flowInstance = useRef<ReactFlowInstance<Node<TurnNodeData>, Edge> | null>(null);
   const autoSummarizedNodeIds = useRef<Set<string>>(new Set());
@@ -1522,6 +1692,7 @@ export function TurnMapCanvas({
   useEffect(() => {
     let cancelled = false;
     const loadingConversationId = conversationId;
+    const shouldRebuild = rebuildRequest > 0 && appliedRebuildRequest.current !== rebuildRequest;
     loadedConversationId.current = null;
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current);
@@ -1532,15 +1703,20 @@ export function TurnMapCanvas({
       historyTimer.current = null;
     }
 
-    Promise.all([loadStoredGraph(conversationId), loadDefaultLayout()]).then(
+    Promise.all([
+      shouldRebuild ? resetStoredGraph(conversationId).then(() => null) : loadStoredGraph(conversationId),
+      loadDefaultLayout()
+    ]).then(
       ([storedGraph, defaultLayout]) => {
       if (cancelled) return;
 
-      const activeLayout = storedGraph.layoutMode ?? defaultLayout;
-      const activeHiddenRoot = storedGraph.hiddenRoot ?? false;
-      const activeHiddenAutoEdgeIds = storedGraph.hiddenAutoEdgeIds ?? [];
-      const activeHiddenNodeIds = storedGraph.hiddenNodeIds ?? [];
-      const storedPositions = storedGraph.schemaVersion >= 2 ? storedGraph.positions : {};
+      const activeLayout = shouldRebuild ? defaultLayout : (storedGraph?.layoutMode ?? defaultLayout);
+      const activeHiddenRoot = shouldRebuild ? false : (storedGraph?.hiddenRoot ?? false);
+      const activeHiddenAutoEdgeIds = shouldRebuild ? [] : (storedGraph?.hiddenAutoEdgeIds ?? []);
+      const activeHiddenNodeIds = shouldRebuild ? [] : (storedGraph?.hiddenNodeIds ?? []);
+      const storedPositions = !shouldRebuild && storedGraph?.schemaVersion && storedGraph.schemaVersion >= 2 ? storedGraph.positions : {};
+      const storedCustomNodes = shouldRebuild ? [] : (storedGraph?.customNodes ?? []);
+      const storedNodeOverrides = shouldRebuild ? {} : (storedGraph?.nodeOverrides ?? {});
       setLayoutMode(activeLayout);
       setHiddenRoot(activeHiddenRoot);
       setHiddenAutoEdgeIds(activeHiddenAutoEdgeIds);
@@ -1554,20 +1730,22 @@ export function TurnMapCanvas({
       const nodeIds = new Set([
         ...(activeLayout === "list" || activeHiddenRoot ? [] : ["conversation-root"]),
         ...turns.filter((turn) => !activeHiddenNodeIds.includes(turn.id)).map((turn) => turn.id),
-        ...(storedGraph.customNodes ?? []).map((node) => node.id)
+        ...storedCustomNodes.map((node) => node.id)
       ]);
-      const validUserEdges = storedGraph.userEdges.filter((edge) => edgeHasExistingNodes(edge, nodeIds));
+      const validUserEdges = shouldRebuild
+        ? []
+        : (storedGraph?.userEdges.filter((edge) => edgeHasExistingNodes(edge, nodeIds)) ?? []);
       const nextNodes = nodesFromTurns(
         conversationTitle,
         turns,
         storedPositions,
-        storedGraph.nodeOverrides,
+        storedNodeOverrides,
         updateNodeText,
         summarizeNode,
         jumpToNodeTurn,
         new Set(),
         activeHiddenNodeIds,
-        storedGraph.customNodes ?? [],
+        storedCustomNodes,
         activeLayout,
         activeHiddenRoot
       );
@@ -1588,6 +1766,10 @@ export function TurnMapCanvas({
         hiddenNodeIds: activeHiddenNodeIds
       });
       loadedConversationId.current = loadingConversationId;
+      if (shouldRebuild) {
+        appliedRebuildRequest.current = rebuildRequest;
+        onStatus?.(t("app.status.rebuilt", { count: turns.length }));
+      }
       }
     );
 
@@ -1597,10 +1779,13 @@ export function TurnMapCanvas({
   }, [
     conversationId,
     conversationTitle,
+    onStatus,
+    rebuildRequest,
     setEdges,
     setNodes,
     summarizeNode,
     jumpToNodeTurn,
+    t,
     turns,
     updateNodeText
   ]);
@@ -2357,8 +2542,9 @@ export function TurnMapCanvas({
     setPendingSuggestedEdges([]);
   }, []);
 
-  const exportJson = useCallback(() => {
+  const exportJson = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.json`;
+    const appearance = await loadExportAppearance();
     downloadTextFile(
       filename,
       serializeGraph(
@@ -2370,7 +2556,8 @@ export function TurnMapCanvas({
         layoutMode,
         hiddenRoot,
         hiddenAutoEdgeIds,
-        hiddenNodeIds
+        hiddenNodeIds,
+        appearance
       ),
       "application/json"
     );
@@ -2408,11 +2595,12 @@ export function TurnMapCanvas({
     }
   }, [markdown, onStatus]);
 
-  const exportObsidianCanvas = useCallback(() => {
+  const exportObsidianCanvas = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.canvas`;
+    const appearance = await loadExportAppearance();
     downloadTextFile(
       filename,
-      graphToObsidianCanvas(conversationTitle, nodes, edges),
+      graphToObsidianCanvas(conversationTitle, nodes, edges, appearance),
       "application/json"
     );
     onStatus?.(`Exported ${filename}`);
@@ -2428,27 +2616,31 @@ export function TurnMapCanvas({
     onStatus?.(t("file.exported", { filename }));
   }, [conversationTitle, edges, nodes, onStatus, t]);
 
-  const exportObsidianVaultMarkdown = useCallback(() => {
+  const exportObsidianVaultMarkdown = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.obsidian-vault.zip`;
+    const appearance = await loadExportAppearance();
     const files = graphToObsidianVaultMarkdownFiles(
       conversationTitle,
       nodesForAdvancedExport(nodes),
-      edgesForAdvancedExport(edges)
+      edgesForAdvancedExport(edges),
+      appearance
     );
     downloadBlobFile(filename, createZipFromTextFiles(files));
     onStatus?.(t("file.exported", { filename }));
   }, [conversationTitle, edges, nodes, onStatus, t]);
 
-  const exportSvg = useCallback(() => {
+  const exportSvg = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.svg`;
-    downloadTextFile(filename, graphToSvg(conversationTitle, nodes, edges), "image/svg+xml;charset=utf-8");
+    const appearance = await loadExportAppearance();
+    downloadTextFile(filename, graphToSvg(conversationTitle, nodes, edges, appearance), "image/svg+xml;charset=utf-8");
     onStatus?.(`Exported ${filename}`);
   }, [conversationTitle, edges, nodes, onStatus]);
 
   const exportPng = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.png`;
     try {
-      const pngBlob = await svgToPngBlob(graphToSvg(conversationTitle, nodes, edges));
+      const appearance = await loadExportAppearance();
+      const pngBlob = await svgToPngBlob(graphToSvg(conversationTitle, nodes, edges, appearance));
       downloadBlobFile(filename, pngBlob);
       onStatus?.(`Exported ${filename}`);
     } catch (error) {
@@ -2526,6 +2718,7 @@ export function TurnMapCanvas({
 
       try {
         const graph = parseImportedGraph(await file.text());
+        const importedAppearance = normalizeImportedAppearance(graph.appearance);
         const nextLayout = isLayoutMode(graph.layout?.mode) ? graph.layout.mode : layoutMode;
         const nextHiddenRoot = Boolean(graph.layout?.hiddenRoot);
         const nextHiddenAutoEdgeIds = Array.isArray(graph.layout?.hiddenAutoEdgeIds)
@@ -2597,6 +2790,7 @@ export function TurnMapCanvas({
           nextHiddenAutoEdgeIds,
           nextHiddenNodeIds
         );
+        void applyImportedAppearance(importedAppearance);
         onStatus?.(`Imported TurnMap JSON: ${nextNodes.length} nodes, ${importedUserEdges.length} user links`);
       } catch (error) {
         onStatus?.(error instanceof Error ? error.message : "TurnMap JSON import failed.");
@@ -2774,7 +2968,7 @@ export function TurnMapCanvas({
                 className="button-with-icon"
                 type="button"
                 onClick={() => {
-                  exportJson();
+                  void exportJson();
                   setFileMenuOpen(false);
                 }}
               >
@@ -2785,7 +2979,7 @@ export function TurnMapCanvas({
                 className="button-with-icon"
                 type="button"
                 onClick={() => {
-                  exportObsidianCanvas();
+                  void exportObsidianCanvas();
                   setFileMenuOpen(false);
                 }}
               >
@@ -2807,7 +3001,7 @@ export function TurnMapCanvas({
                 className="button-with-icon"
                 type="button"
                 onClick={() => {
-                  exportObsidianVaultMarkdown();
+                  void exportObsidianVaultMarkdown();
                   setFileMenuOpen(false);
                 }}
               >
@@ -2818,7 +3012,7 @@ export function TurnMapCanvas({
                 className="button-with-icon"
                 type="button"
                 onClick={() => {
-                  exportSvg();
+                  void exportSvg();
                   setFileMenuOpen(false);
                 }}
               >

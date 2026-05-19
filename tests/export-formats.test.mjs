@@ -16,6 +16,9 @@ const nodes = [
     summary: "Find primary papers and extract metadata.",
     status: "review",
     tags: ["research", "sources"],
+    color: "emerald",
+    collapsed: true,
+    important: true,
     turn: {
       id: "turn-1",
       turnIndex: 0,
@@ -45,6 +48,15 @@ const edges = [
   }
 ];
 
+const appearance = {
+  theme: "night",
+  resolvedTheme: "night",
+  nodeColorRendering: {
+    mode: "solid",
+    strength: 86
+  }
+};
+
 test("graphToOpml exports nodes and relationship metadata", () => {
   const opml = graphToOpml("Research Plan", nodes, edges);
 
@@ -53,6 +65,9 @@ test("graphToOpml exports nodes and relationship metadata", () => {
   assert.match(opml, /<outline text="Collect sources"/);
   assert.match(opml, /Status: review/);
   assert.match(opml, /Tags: #research #sources/);
+  assert.match(opml, /Color: emerald/);
+  assert.match(opml, /Collapsed: true/);
+  assert.match(opml, /Important: true/);
   assert.match(opml, /Turn: 1/);
   assert.match(opml, /<outline text="Links">/);
   assert.match(opml, /Collect sources -&gt; Synthesis note/);
@@ -61,7 +76,7 @@ test("graphToOpml exports nodes and relationship metadata", () => {
 });
 
 test("graphToObsidianVaultMarkdownFiles creates an index and node notes", () => {
-  const files = graphToObsidianVaultMarkdownFiles("Research Plan", nodes, edges);
+  const files = graphToObsidianVaultMarkdownFiles("Research Plan", nodes, edges, appearance);
   const byPath = new Map(files.map((file) => [file.path, file.content]));
 
   assert.ok(byPath.has("index.md"));
@@ -70,12 +85,18 @@ test("graphToObsidianVaultMarkdownFiles creates an index and node notes", () => 
 
   const index = byPath.get("index.md") ?? "";
   assert.match(index, /# Research Plan/);
+  assert.match(index, /theme: night/);
+  assert.match(index, /node_color_render_mode: solid/);
+  assert.match(index, /node_color_render_strength: 86/);
   assert.match(index, /\[\[nodes\/turn-1-collect-sources\|Collect sources\]\]/);
   assert.match(index, /Collect sources \| Synthesis note \| supports \| feeds \| 86%/);
 
   const turnNote = byPath.get("nodes/turn-1-collect-sources.md") ?? "";
   assert.match(turnNote, /tags:\n  - research\n  - sources/);
   assert.match(turnNote, /status: review/);
+  assert.match(turnNote, /color: emerald/);
+  assert.match(turnNote, /collapsed: true/);
+  assert.match(turnNote, /important: true/);
   assert.match(turnNote, /## Source Turn/);
   assert.match(turnNote, /How should I collect sources\?/);
   assert.match(turnNote, /\[\[nodes\/note-1-synthesis-note\|Synthesis note\]\]/);

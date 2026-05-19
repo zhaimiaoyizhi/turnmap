@@ -57,6 +57,7 @@ export function App({ mode = "side-panel" }: AppProps) {
   const [floatingEnabled, setFloatingEnabled] = useState(false);
   const [lastMessage, setLastMessage] = useState<ExtractedTurnsMessage | null>(null);
   const [taskLog, setTaskLog] = useState<ApiTaskLogEntry[]>([]);
+  const [rebuildRequest, setRebuildRequest] = useState(0);
   const [sourceTabId, setSourceTabId] = useState<number | undefined>(() =>
     mode === "full-page" ? sourceTabIdFromUrl() : undefined
   );
@@ -90,6 +91,20 @@ export function App({ mode = "side-panel" }: AppProps) {
       applyTurnsMessage(message);
     } else {
       setStatus(t("app.status.openConversation"));
+    }
+  }, [applyTurnsMessage, sourceTabId, t]);
+
+  const rebuildMap = useCallback(async () => {
+    const confirmed = window.confirm(t("app.confirm.rebuild"));
+    if (!confirmed) return;
+
+    setStatus(t("app.status.rebuilding"));
+    const message = await requestTurnsFromActiveTab({ ensureFull: true, tabId: sourceTabId });
+    if (message?.type === "TURNMAP_TURNS_UPDATED") {
+      applyTurnsMessage(message);
+      setRebuildRequest((request) => request + 1);
+    } else {
+      setStatus(t("app.status.rebuildFailed"));
     }
   }, [applyTurnsMessage, sourceTabId, t]);
 
@@ -260,6 +275,10 @@ export function App({ mode = "side-panel" }: AppProps) {
             <Icon name="scan" />
             <span>{t("app.action.deepScan")}</span>
           </button>
+          <button className="button-with-icon" type="button" onClick={rebuildMap}>
+            <Icon name="rebuild" />
+            <span>{t("app.action.rebuild")}</span>
+          </button>
           <button className="button-with-icon" type="button" onClick={openSettingsPage}>
             <Icon name="settings" />
             <span>{t("app.action.settings")}</span>
@@ -321,6 +340,7 @@ export function App({ mode = "side-panel" }: AppProps) {
         conversationTitle={conversationTitle}
         turns={turns}
         sourceTabId={sourceTabId}
+        rebuildRequest={rebuildRequest}
         onStatus={setStatus}
         onTaskStatus={reportTaskStatus}
       />

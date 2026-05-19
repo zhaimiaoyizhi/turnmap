@@ -8,7 +8,7 @@ TurnMap 是一个优先面向 Edge 的浏览器扩展，用来把当前网页端
 
 > 状态：早期预览版。TurnMap 还没有发布到 Edge Add-ons 或 Chrome Web Store。当前可以从源码手动安装，或从 GitHub Release 下载预览包。
 
-![TurnMap 预览](docs/assets/turnmap-preview.png)
+![TurnMap 预览](docs/assets/github-social-preview.png)
 
 ## 适用场景
 

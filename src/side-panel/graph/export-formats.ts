@@ -11,6 +11,9 @@ export type ExportNode = {
   summary: string;
   status?: "open" | "review" | "done";
   tags?: string[];
+  color?: string;
+  collapsed?: boolean;
+  important?: boolean;
   turn?: ExportTurn;
   isConversationRoot?: boolean;
   position?: { x: number; y: number };
@@ -30,6 +33,15 @@ export type ExportEdge = {
 export type VaultMarkdownFile = {
   path: string;
   content: string;
+};
+
+export type ExportAppearance = {
+  theme?: string;
+  resolvedTheme?: string;
+  nodeColorRendering?: {
+    mode?: "gradient" | "solid";
+    strength?: number;
+  };
 };
 
 export function escapeXml(value: string): string {
@@ -75,6 +87,9 @@ function noteLines(node: ExportNode): string[] {
     node.turn ? `Turn: ${node.turn.turnIndex + 1}` : "",
     node.status ? `Status: ${node.status}` : "",
     tagLine(node.tags) ? `Tags: ${tagLine(node.tags)}` : "",
+    node.color ? `Color: ${node.color}` : "",
+    typeof node.collapsed === "boolean" ? `Collapsed: ${node.collapsed}` : "",
+    node.important ? "Important: true" : "",
     node.turn?.userText ? `User: ${node.turn.userText.trim()}` : "",
     node.turn?.assistantText ? `Assistant: ${node.turn.assistantText.trim()}` : ""
   ].filter(Boolean);
@@ -159,6 +174,9 @@ function frontmatter(node: ExportNode): string {
   const lines = ["---", `id: ${yamlString(node.id)}`, `title: ${yamlString(node.title || node.id)}`];
   if (node.status) lines.push(`status: ${node.status}`);
   if (node.turn) lines.push(`turn: ${node.turn.turnIndex + 1}`);
+  if (node.color) lines.push(`color: ${node.color}`);
+  if (typeof node.collapsed === "boolean") lines.push(`collapsed: ${node.collapsed}`);
+  if (node.important) lines.push("important: true");
   const tags = cleanTags(node.tags);
   if (tags.length) {
     lines.push("tags:");
@@ -203,7 +221,27 @@ function nodeMarkdown(node: ExportNode, nodesById: Map<string, ExportNode>, edge
   return `${sections.join("\n\n")}\n`;
 }
 
-function indexMarkdown(conversationTitle: string, nodes: ExportNode[], edges: ExportEdge[]): string {
+function appearanceFrontmatter(appearance?: ExportAppearance): string {
+  if (!appearance) return "";
+  const lines = ["---"];
+  if (appearance.theme) lines.push(`theme: ${appearance.theme}`);
+  if (appearance.resolvedTheme) lines.push(`resolved_theme: ${appearance.resolvedTheme}`);
+  if (appearance.nodeColorRendering?.mode) {
+    lines.push(`node_color_render_mode: ${appearance.nodeColorRendering.mode}`);
+  }
+  if (typeof appearance.nodeColorRendering?.strength === "number") {
+    lines.push(`node_color_render_strength: ${appearance.nodeColorRendering.strength}`);
+  }
+  lines.push("---");
+  return lines.length > 2 ? `${lines.join("\n")}\n\n` : "";
+}
+
+function indexMarkdown(
+  conversationTitle: string,
+  nodes: ExportNode[],
+  edges: ExportEdge[],
+  appearance?: ExportAppearance
+): string {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const lines = [
     `# ${conversationTitle}`,
@@ -237,17 +275,18 @@ function indexMarkdown(conversationTitle: string, nodes: ExportNode[], edges: Ex
     );
   });
 
-  return `${lines.join("\n")}\n`;
+  return `${appearanceFrontmatter(appearance)}${lines.join("\n")}\n`;
 }
 
 export function graphToObsidianVaultMarkdownFiles(
   conversationTitle: string,
   nodes: ExportNode[],
-  edges: ExportEdge[]
+  edges: ExportEdge[],
+  appearance?: ExportAppearance
 ): VaultMarkdownFile[] {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   return [
-    { path: "index.md", content: indexMarkdown(conversationTitle, nodes, edges) },
+    { path: "index.md", content: indexMarkdown(conversationTitle, nodes, edges, appearance) },
     ...visibleNodes(nodes).map((node) => ({
       path: nodePath(node),
       content: nodeMarkdown(node, nodesById, edges)

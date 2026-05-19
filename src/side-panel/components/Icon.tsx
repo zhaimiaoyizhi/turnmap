@@ -15,6 +15,7 @@ export type IconName =
   | "map"
   | "maximize"
   | "panel"
+  | "rebuild"
   | "refresh"
   | "redo"
   | "scan"
@@ -150,6 +151,14 @@ const paths: Record<IconName, ReactElement> = {
     <>
       <rect height="16" rx="2" width="18" x="3" y="4" />
       <path d="M9 4v16" />
+    </>
+  ),
+  rebuild: (
+    <>
+      <path d="M4 7h9a5 5 0 0 1 0 10H8" />
+      <path d="M8 13 4 17l4 4" />
+      <path d="M17 3v5h5" />
+      <path d="M22 8a8 8 0 0 0-14.5-3" />
     </>
   ),
   refresh: (
