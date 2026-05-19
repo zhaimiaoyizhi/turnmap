@@ -8,7 +8,7 @@ TurnMap is an Edge-first browser extension that maps the current AI conversation
 
 > Status: early preview. TurnMap is not yet published to Edge Add-ons or Chrome Web Store. Install it manually from source or from a GitHub Release package.
 
-![TurnMap preview](docs/assets/turnmap-preview.png)
+![TurnMap preview](docs/assets/github_social_preview.png)
 
 ## What It Is For
 
