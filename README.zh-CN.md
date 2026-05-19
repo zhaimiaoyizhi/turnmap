@@ -100,7 +100,7 @@ TurnMap 的设置页面用于管理全局界面偏好：
 
 ## AI 功能
 
-TurnMap 支持提供 OpenAI-compatible `/chat/completions` API 的服务商。
+TurnMap 目前支持提供 OpenAI-compatible `/chat/completions` API 的服务商。
 
 内置预设：
 
@@ -186,7 +186,7 @@ scripts           构建和打包辅助脚本
 - `0.1.x`：稳定预览版，重点是 AI fallback、Float / Full Page 小屏体验；读取和跳转目前较稳定，暂不重构。
 - `0.2.0`：更新提示与 ChatGPT 适配增强，包括 GitHub Release 检查、忽略版本、稍后提醒、脱敏 debug report。
 - `0.3.0`：协作与高级导出。OPML 与 Obsidian vault Markdown 已实现；XMind 作为 Anki CSV 之前的下一优先项。
-- `0.4.0`：多 AI 对话网页适配，支持 ChatGPT、Gemini、Claude.ai、DeepSeek、Kimi、豆包、Qwen、Google AI Studio、Perplexity、Grok、GLM / Z.ai / 智谱清言、Mistral Le Chat 和 Arena / LMArena。当前计划完成后，继续处理 MiniMax Agent。
+- `0.4.0`：多 AI 对话网页适配，支持 ChatGPT、Gemini、Claude.ai、DeepSeek、Kimi、豆包、Qwen、Google AI Studio、Perplexity、Grok、GLM / Z.ai / 智谱清言、Mistral Le Chat 和 Arena / LMArena。
 - `0.5.0`：更多 API Key / Provider 兼容，Custom OpenAI-compatible endpoint 保留为兜底接入方式。
 - `0.6.0`：Embedding 主题分析增强，默认不开启，只在长对话或用户手动触发时使用。
 - `0.7.0`：知识整理能力增强，包括更智能的链接、批量接受/拒绝链接、主题折叠、批量标签。
