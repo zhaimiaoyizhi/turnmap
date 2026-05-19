@@ -52,9 +52,8 @@ It currently maps the active conversation on supported AI websites. Cross-conver
 These items are planned before a wider public release:
 
 - **Update Notice**: notify users when a new GitHub Release or store version is available.
-- **More AI chat sites**: continue improving adapters for supported web AI products and add more sites as their page structures stabilize.
-- **0.4.0 follow-up web adapters**: after the current plan is complete, continue with MiniMax Agent.
-- **More browsers**: extend compatibility beyond Edge, especially Chrome and Firefox.
+- **More AI chat sites**: continue improving adapters for supported web AI products and add more sites as their page structures stabilize.Welcome to let me know your favourates!
+- **More browsers**: extend compatibility beyond Edge, especially Chrome (and maybe Firefox).
 - **More AI providers**: broaden API key support for more OpenAI-compatible and mainstream model providers.
 - **Stronger AI features**: improve AI translation, AI summaries, AI suggested links, provider compatibility, and task-log based troubleshooting.
 
