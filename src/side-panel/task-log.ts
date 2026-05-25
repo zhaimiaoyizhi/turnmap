@@ -1,4 +1,4 @@
-﻿export type ApiTaskKind = "summarize" | "suggest-links" | "translate" | "test-connection";
+﻿export type ApiTaskKind = "summarize" | "suggest-links" | "translate" | "test-connection" | "analyze-topics";
 export type ApiTaskStatus = "running" | "success" | "error";
 
 export type ApiTaskLogEntry = {
@@ -29,13 +29,26 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function sanitizeLogText(value: string): string {
+  return value
+    .replace(/Bearer\s+[A-Za-z0-9._:-]+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[A-Za-z0-9._-]+/g, "[redacted-key]")
+    .replace(/\bkey=[A-Za-z0-9._:-]+/gi, "key=[redacted]")
+    .replace(/https?:\/\/([^/\s]+)(?:\/[^\s]*)?/g, "host=$1")
+    .replace(/private\s+(user|assistant)\s+text/gi, "[redacted-conversation-text]");
+}
+
+function sanitizeLogId(value: string): string {
+  return sanitizeLogText(value).replace(/secret[-_\w]*/gi, "redacted");
+}
+
 export function sanitizeTaskLogEntry(entry: ApiTaskLogDraft): ApiTaskLogEntry {
   const timestamp = nowIso();
   return {
-    id: entry.id.slice(0, 120),
+    id: sanitizeLogId(entry.id).slice(0, 120),
     kind: entry.kind,
     status: entry.status,
-    message: entry.message.replace(/\s+/g, " ").trim().slice(0, 200),
+    message: sanitizeLogText(entry.message).replace(/\s+/g, " ").trim().slice(0, 200),
     progress: Math.max(0, Math.min(100, Math.round(entry.progress))),
     createdAt: entry.createdAt ?? timestamp,
     updatedAt: entry.updatedAt ?? timestamp

@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { AiSettingsForm } from "../side-panel/settings/AiSettingsForm";
 import {
@@ -14,7 +14,9 @@ import {
   type CustomLanguage,
   type I18nKey,
   type LanguageMode,
+  exportLanguagePack,
   generateCustomLanguage,
+  importLanguagePack,
   loadLanguageSettings,
   saveCustomLanguage,
   saveLanguageMode
@@ -57,8 +59,11 @@ function SettingsPage() {
   const [languageMode, setLanguageMode] = useState<LanguageMode>(DEFAULT_LANGUAGE);
   const [customLanguages, setCustomLanguages] = useState<CustomLanguage[]>([]);
   const [customLanguageName, setCustomLanguageName] = useState("");
+  const [customLanguageCode, setCustomLanguageCode] = useState("");
+  const [languagePackFileName, setLanguagePackFileName] = useState("");
   const [translating, setTranslating] = useState(false);
   const [status, setStatus] = useState("");
+  const languagePackInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     void Promise.all([loadUiSettings(), loadLanguageSettings()]).then(([loadedSettings, languageSettings]) => {
@@ -94,6 +99,10 @@ function SettingsPage() {
     setStatus((current) => current || t("settings.status.local"));
   }, [t]);
 
+  useEffect(() => {
+    document.title = t("settings.documentTitle");
+  }, [t]);
+
   const save = useCallback(async () => {
     if (!settings) return;
     await saveUiSettings(settings);
@@ -111,9 +120,13 @@ function SettingsPage() {
       setStatus(t("settings.translationNeedsName"));
       return;
     }
+    if (!customLanguageCode.trim()) {
+      setStatus(t("settings.translationNeedsCode"));
+      return;
+    }
 
     setTranslating(true);
-    const taskId = `translate-${customLanguageName.trim().toLowerCase().replace(/\s+/g, "-")}`;
+    const taskId = `translate-${customLanguageCode.trim().toLowerCase().replace(/\s+/g, "-")}`;
     setStatus(t("task.translate", { language: customLanguageName.trim() }));
     void recordApiTaskLog({
       id: taskId,
@@ -123,7 +136,7 @@ function SettingsPage() {
       progress: 10
     });
     try {
-      const language = await generateCustomLanguage(customLanguageName);
+      const language = await generateCustomLanguage(customLanguageName, customLanguageCode);
       await saveCustomLanguage(language);
       setCustomLanguages((current) => [language, ...current.filter((item) => item.id !== language.id)].slice(0, 12));
       setLanguageMode(`custom:${language.id}`);
@@ -148,7 +161,59 @@ function SettingsPage() {
     } finally {
       setTranslating(false);
     }
-  }, [customLanguageName, t]);
+  }, [customLanguageCode, customLanguageName, t]);
+
+  const importLanguagePackFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = "";
+      if (!file) return;
+      setLanguagePackFileName(file.name);
+
+      try {
+        const parsed = JSON.parse(await file.text());
+        const result = importLanguagePack(parsed, customLanguages);
+        if (result.conflict && !window.confirm(t("settings.languageImportConflict"))) {
+          setStatus(t("settings.languageImportCancelled"));
+          return;
+        }
+        await saveCustomLanguage(result.language);
+        setCustomLanguages((current) =>
+          [result.language, ...current.filter((item) => item.id !== result.language.id)].slice(0, 12)
+        );
+        setLanguageMode(`custom:${result.language.id}`);
+        setStatus(
+          t("settings.languageImportDone", {
+            language: result.language.label,
+            count: result.validation.missingKeys.length
+          })
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t("settings.languageImportFailed");
+        setStatus(message);
+      }
+    },
+    [customLanguages, t]
+  );
+
+  const exportCurrentLanguagePack = useCallback(() => {
+    const id = languageMode.startsWith("custom:") ? languageMode.slice("custom:".length) : "";
+    const language = customLanguages.find((item) => item.id === id);
+    if (!language) {
+      setStatus(t("settings.languageExportNeedsCustom"));
+      return;
+    }
+
+    const pack = exportLanguagePack(language);
+    const blob = new Blob([`${JSON.stringify(pack, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `turnmap-language-${language.languageCode.toLowerCase()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus(t("settings.languageExportDone", { language: language.label }));
+  }, [customLanguages, languageMode, t]);
 
   return (
     <main className="settings-page">
@@ -228,12 +293,46 @@ function SettingsPage() {
                     placeholder={t("settings.customLanguagePlaceholder")}
                   />
                 </label>
+                <label>
+                  {t("settings.languageCode")}
+                  <input
+                    value={customLanguageCode}
+                    onChange={(event) => setCustomLanguageCode(event.currentTarget.value)}
+                    placeholder={t("settings.languageCodePlaceholder")}
+                  />
+                </label>
                 <button type="button" onClick={() => void translateLanguage()} disabled={translating}>
                   {translating ? t("settings.generatingTranslation") : t("settings.generateTranslation")}
                 </button>
               </div>
 
               <p>{t("settings.customTranslationHint")}</p>
+              <p>{t("settings.translationRepairHint")}</p>
+
+              <div className="settings-section__inline">
+                <div className="settings-file-picker">
+                  <span>{t("settings.importLanguagePack")}</span>
+                  <input
+                    ref={languagePackInputRef}
+                    className="file-input"
+                    type="file"
+                    accept="application/json,.json"
+                    aria-label={t("settings.importLanguagePack")}
+                    onChange={(event) => void importLanguagePackFile(event)}
+                  />
+                  <button type="button" onClick={() => languagePackInputRef.current?.click()}>
+                    {t("settings.languagePackChooseFile")}
+                  </button>
+                  <span className="settings-file-picker__name" title={languagePackFileName}>
+                    {languagePackFileName
+                      ? t("settings.languagePackSelected", { filename: languagePackFileName })
+                      : t("settings.languagePackNoFile")}
+                  </span>
+                </div>
+                <button type="button" onClick={exportCurrentLanguagePack} title={t("settings.exportLanguagePack")}>
+                  {t("settings.exportLanguagePack")}
+                </button>
+              </div>
 
               <fieldset className="settings-fieldset">
                 <legend>{t("settings.nodeColorRendering")}</legend>
@@ -323,7 +422,7 @@ function SettingsPage() {
                 <input
                   value={settings.ignoredVersion}
                   onChange={(event) => update({ ignoredVersion: event.currentTarget.value })}
-                  placeholder="v0.1.1"
+                  placeholder={t("settings.ignoredVersionPlaceholder")}
                 />
               </label>
 

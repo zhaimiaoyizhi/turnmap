@@ -1,18 +1,22 @@
 import { useState, type CSSProperties, type MouseEvent } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import type { SourceAnchor, Turn } from "../../shared/types.ts";
 import { useI18n } from "../i18n/useI18n";
 import { colorValue, type NodeColorName } from "./graph-colors";
+import { hasAiTag, sanitizeSourceAnchors } from "./source-anchors.ts";
+import { shouldShowAiSummaryButton } from "./summary-behavior.ts";
 
 export function TurnNode({ id, data, selected }: NodeProps) {
   const { t } = useI18n();
   const nodeData = data as {
     title: string;
     summary: string;
-    turn?: { turnIndex: number };
+    turn?: Turn;
     isConversationRoot?: boolean;
     isCustomNode?: boolean;
     status?: "open" | "review" | "done";
     tags?: string[];
+    sourceAnchors?: SourceAnchor[];
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
@@ -22,6 +26,15 @@ export function TurnNode({ id, data, selected }: NodeProps) {
     isSummarizing?: boolean;
   };
   const [editingField, setEditingField] = useState<"title" | "summary" | null>(null);
+  const canShowSummarizeButton = shouldShowAiSummaryButton({
+    title: nodeData.title,
+    summary: nodeData.summary,
+    turn: nodeData.turn,
+    isCustomNode: nodeData.isCustomNode,
+    isConversationRoot: nodeData.isConversationRoot,
+    tags: nodeData.tags,
+    sourceAnchors: sanitizeSourceAnchors(nodeData.sourceAnchors)
+  });
 
   const commitEdit = (field: "title" | "summary", value: string) => {
     const trimmed = value.trim();
@@ -61,11 +74,12 @@ export function TurnNode({ id, data, selected }: NodeProps) {
               ? t("node.note")
               : t("node.turn").replace("{number}", String(nodeData.turn!.turnIndex + 1))}
         </span>
-        {!nodeData.isConversationRoot && !nodeData.isCustomNode ? (
+        {canShowSummarizeButton ? (
           <button
             type="button"
             className="turn-node__mini-button"
             disabled={nodeData.isSummarizing}
+            title={nodeData.isCustomNode && hasAiTag(nodeData.tags) ? "#AI" : undefined}
             onClick={(event) => {
               event.stopPropagation();
               nodeData.onSummarize?.(id);

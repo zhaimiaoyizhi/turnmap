@@ -162,8 +162,8 @@ export function App({ mode = "side-panel" }: AppProps) {
     });
     const filename = `${safeFilePart(conversationTitle)}.turnmap-debug.md`;
     downloadTextFile(filename, report, "text/markdown;charset=utf-8");
-    setStatus(`Exported ${filename}`);
-  }, [conversationId, conversationTitle, lastMessage, mode, sourceTabId, status, taskLog]);
+    setStatus(t("debug.exportReportDone", { filename }));
+  }, [conversationId, conversationTitle, lastMessage, mode, sourceTabId, status, taskLog, t]);
 
   const exportTaskLog = useCallback(() => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap-task-log.json`;
@@ -206,6 +206,10 @@ export function App({ mode = "side-panel" }: AppProps) {
   useEffect(() => {
     setStatus((current) => current || t("app.status.waiting"));
   }, [t]);
+
+  useEffect(() => {
+    document.title = t(mode === "full-page" ? "app.documentTitle.fullPage" : "app.documentTitle");
+  }, [mode, t]);
 
   useEffect(() => {
     let currentTheme = normalizeTheme(undefined);

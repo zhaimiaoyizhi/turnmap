@@ -345,6 +345,12 @@ type TurnCandidate = {
   assistantHash: string;
 };
 
+type UserTurnMarker = {
+  index: number;
+  user: MessageBlock;
+  userHash: string;
+};
+
 function getTurnCandidates(): TurnCandidate[] {
   const blocks = getMessageBlocks();
   const turnCandidates: TurnCandidate[] = [];
@@ -372,6 +378,31 @@ function getTurnCandidates(): TurnCandidate[] {
   return turnCandidates;
 }
 
+function getUserTurnMarkers(): UserTurnMarker[] {
+  const blocks = getMessageBlocks();
+  const markers: UserTurnMarker[] = [];
+  let currentTurn = -1;
+
+  for (const block of blocks) {
+    if (block.role !== "user") continue;
+    currentTurn += 1;
+    markers.push({
+      index: currentTurn,
+      user: block,
+      userHash: hashText(block.text)
+    });
+  }
+
+  return markers;
+}
+
+function attachmentNamesMatch(candidateNames: string[] | undefined, anchor: SourceAnchor): boolean {
+  const anchorNames = anchor.userAttachmentNames ?? [];
+  if (anchorNames.length === 0) return true;
+  const candidateNameSet = new Set((candidateNames ?? []).map((name) => name.toLowerCase()));
+  return anchorNames.every((name) => candidateNameSet.has(name.toLowerCase()));
+}
+
 function hasSameMessageIds(candidate: TurnCandidate, anchor: SourceAnchor): boolean {
   return (
     Boolean(anchor.userMessageId || anchor.assistantMessageId) &&
@@ -396,10 +427,7 @@ function hasSameUserPreview(candidate: TurnCandidate, anchor: SourceAnchor): boo
 }
 
 function hasSameAttachments(candidate: TurnCandidate, anchor: SourceAnchor): boolean {
-  const anchorNames = anchor.userAttachmentNames ?? [];
-  if (anchorNames.length === 0) return true;
-  const candidateNames = new Set((candidate.user.attachmentNames ?? []).map((name) => name.toLowerCase()));
-  return anchorNames.every((name) => candidateNames.has(name.toLowerCase()));
+  return attachmentNamesMatch(candidate.user.attachmentNames, anchor);
 }
 
 function candidateMatchesTurn(candidate: TurnCandidate, turn: Turn): boolean {
@@ -414,6 +442,54 @@ function getCandidateGlobalIndex(candidate: TurnCandidate, knownTurns: Turn[]): 
 
   const match = knownTurns.find((turn) => candidateMatchesTurn(candidate, turn));
   return match?.turnIndex ?? null;
+}
+
+function markerMatchesTurn(marker: UserTurnMarker, turn: Turn): boolean {
+  const anchor = turn.sourceAnchor;
+  if (anchor.userMessageId && marker.user.messageId === anchor.userMessageId) return true;
+  if (marker.userHash === anchor.userHash && attachmentNamesMatch(marker.user.attachmentNames, anchor)) return true;
+  return Boolean(
+    anchor.userPreview &&
+      marker.user.text.includes(anchor.userPreview) &&
+      attachmentNamesMatch(marker.user.attachmentNames, anchor)
+  );
+}
+
+function markerMatchesAnchor(marker: UserTurnMarker, anchor: SourceAnchor): boolean {
+  if (anchor.userMessageId && marker.user.messageId === anchor.userMessageId) return true;
+  if (marker.userHash === anchor.userHash && attachmentNamesMatch(marker.user.attachmentNames, anchor)) return true;
+  return Boolean(
+    anchor.userPreview &&
+      marker.user.text.includes(anchor.userPreview) &&
+      attachmentNamesMatch(marker.user.attachmentNames, anchor)
+  );
+}
+
+function getMarkerGlobalIndex(marker: UserTurnMarker, knownTurns: Turn[]): number | null {
+  if (knownTurns.length === 0) return null;
+
+  const match = knownTurns.find((turn) => markerMatchesTurn(marker, turn));
+  return match?.turnIndex ?? null;
+}
+
+function pickBestUserMarker(
+  markers: UserTurnMarker[],
+  anchor: SourceAnchor,
+  knownTurns: Turn[]
+): UserTurnMarker | null {
+  if (markers.length === 0) return null;
+
+  const indexed = markers
+    .map((marker) => ({
+      marker,
+      globalIndex: getMarkerGlobalIndex(marker, knownTurns)
+    }))
+    .filter((entry) => entry.globalIndex !== null);
+
+  const exactIndex = indexed.find((entry) => entry.globalIndex === anchor.turnIndex);
+  if (exactIndex) return exactIndex.marker;
+  if (knownTurns.length > 0) return null;
+  return markers.length === 1 ? markers[0] : null;
 }
 
 function pickBestCandidate(
@@ -440,6 +516,7 @@ function pickBestCandidate(
 
 export function findTurnElement(anchor: SourceAnchor, knownTurns: Turn[] = []): HTMLElement | null {
   const turnCandidates = getTurnCandidates();
+  const userMarkers = getUserTurnMarkers();
 
   const idMatch = pickBestCandidate(turnCandidates.filter((candidate) => hasSameMessageIds(candidate, anchor)), anchor, knownTurns);
   if (idMatch) return idMatch.user.element;
@@ -465,18 +542,31 @@ export function findTurnElement(anchor: SourceAnchor, knownTurns: Turn[] = []): 
   );
   if (userPreviewMatch) return userPreviewMatch.user.element;
 
+  const userMarkerMatch = pickBestUserMarker(
+    userMarkers.filter((marker) => markerMatchesAnchor(marker, anchor)),
+    anchor,
+    knownTurns
+  );
+  if (userMarkerMatch) return userMarkerMatch.user.element;
+
   return null;
 }
 
 export function getVisibleTurnIndexRange(knownTurns: Turn[] = []): { first: number; last: number; count: number } | null {
   const candidates = getTurnCandidates();
-  if (candidates.length === 0) return null;
+  const userMarkers = getUserTurnMarkers();
+  if (candidates.length === 0 && userMarkers.length === 0) return null;
 
   if (knownTurns.length > 0) {
-    const indexes = candidates
+    const completeIndexes = candidates
       .map((candidate) => getCandidateGlobalIndex(candidate, knownTurns))
       .filter((index): index is number => index !== null)
       .sort((left, right) => left - right);
+    const markerIndexes = userMarkers
+      .map((marker) => getMarkerGlobalIndex(marker, knownTurns))
+      .filter((index): index is number => index !== null)
+      .sort((left, right) => left - right);
+    const indexes = [...new Set([...completeIndexes, ...markerIndexes])].sort((left, right) => left - right);
 
     if (indexes.length > 0) {
       return {
@@ -495,6 +585,14 @@ export function getVisibleTurnIndexRange(knownTurns: Turn[] = []): { first: numb
     }
 
     return null;
+  }
+
+  if (candidates.length === 0) {
+    return {
+      first: userMarkers[0].index,
+      last: userMarkers[userMarkers.length - 1].index,
+      count: userMarkers.length
+    };
   }
 
   return {

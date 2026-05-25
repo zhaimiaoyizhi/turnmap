@@ -29,6 +29,7 @@ It currently maps the active conversation on supported AI websites. Cross-conver
 - **Custom node appearance**: color nodes, collapse long content, mark important nodes, and tune color rendering with gradient or background modes.
 - **Semantic links**: link colors are clearer and consistent with node color presets; important links can be emphasized more strongly.
 - **AI assist preview**: summarize nodes, suggest high-confidence semantic links, and generate custom UI translations, with provider compatibility still being improved.
+- **Topic Analysis MVP**: locally preclassify high-signal candidate links from node metadata before optional AI review.
 - **More appearance controls**: light, dark, eye-care, and browser-following themes, plus layout and rendering defaults.
 - **Multiple views**: Side Panel, Full Page, and Float.
 - **Settings Page**: manage AI, interface defaults, theme, language, launcher, Float, and update preferences outside the map workspace.
@@ -55,7 +56,7 @@ These items are planned before a wider public release:
 - **More AI chat sites**: continue improving adapters for supported web AI products and add more sites as their page structures stabilize.Welcome to let me know your favourates!
 - **More browsers**: extend compatibility beyond Edge, especially Chrome (and maybe Firefox).
 - **More AI providers**: broaden API key support for more OpenAI-compatible and mainstream model providers.
-- **Stronger AI features**: improve AI translation, AI summaries, AI suggested links, provider compatibility, and task-log based troubleshooting.
+- **Stronger organization features**: improve local topic analysis, AI summaries, AI suggested links, provider compatibility, and task-log based troubleshooting.
 
 ## Install From Source
 
@@ -107,35 +108,43 @@ TurnMap has a dedicated settings page for global UI preferences:
 - **Language**: follow browser, English, Chinese, and locally saved AI-generated custom UI translations.
 - **Default layout**: Single-side, Radial, Matrix, or Two-sided.
 - **Node color rendering**: choose gradient or solid background rendering and adjust color intensity.
-- **AI output budget**: adjust `max_tokens` for providers or reasoning models that need more response budget.
+- **AI output budget**: adjust `max_tokens`, which caps output length but does not change the model's context window.
 - **Entry points**: manage Side Panel, Full Page, Float, and page launcher preferences.
 
 ## AI Features
 
-TurnMap supports providers that expose an OpenAI-compatible `/chat/completions` API.
+TurnMap supports providers that expose an OpenAI-compatible `/chat/completions` API. Provider presets are convenience defaults for fast, lower-cost, context-friendly models; users can still edit the base URL and model when their account, region, or endpoint requires a different value.
 
 Supported presets:
 
 - OpenAI
 - DeepSeek
-- Custom compatible endpoint
+- OpenRouter
+- Qwen / DashScope
+- Kimi / Moonshot
+- Doubao / Volcano Ark
+- Zhipu / GLM
+- Mistral
+- Gemini compatible
+- Custom OpenAI-compatible endpoint
 
 AI features are currently preview capabilities and are not yet fully reliable across every provider:
 
 - **Summarize**: generate compact node titles and summaries, with provider JSON/text response compatibility still being improved.
+- **Analyze Topics**: locally preclassify likely topic-related link candidates from node titles, summaries, tags, distance, and existing links, then show them for review before changing the graph.
 - **Suggest Links**: propose strong semantic links between non-adjacent related nodes, with thresholds and visual density still being tuned.
-- **AI translation**: generate custom UI language packs saved locally, with layout-safe text replacement still being hardened.
+- **AI translation**: generate local UI language packs with the user's API key, import/export standard JSON language packs, and fall back to English for missing labels.
 - **Auto summarize**: summarize new/default nodes when enabled.
 
-Future versions will continue improving AI translation, AI summaries, AI suggested links, provider compatibility, and task-log based troubleshooting.
+Future versions will continue improving AI summaries, AI suggested links, provider compatibility, and task-log based troubleshooting.
 
-API keys are saved in the browser extension's local storage under the user's local browser profile. They are not committed to this repository.
+API keys are saved in the browser extension's local storage under the user's local browser profile. Paste the raw key only, without a `Bearer ` prefix. Some providers use the model field as an endpoint ID, and the base URL is always the request entry point rather than part of the key.
 
-See [AI Provider Guide](docs/ai-provider-guide.md) for response-format requirements.
+TurnMap keeps larger task-level output budgets for summarization, link suggestions, and AI UI translation while leaving `maxTokens` configurable up to 12000. AI translation sends only TurnMap UI labels, may make one extra API call to repair malformed JSON, and stores generated/imported language packs locally. See [AI Provider Guide](docs/ai-provider-guide.md) for provider defaults, language-pack format, response-format requirements, and token-budget notes.
 
 ## Privacy
 
-By default, TurnMap stores conversation maps locally in the browser extension storage. AI features send selected conversation text to the provider configured by the user. Exports are controlled by the user.
+By default, TurnMap stores conversation maps locally in the browser extension storage. Analyze Topics runs locally and uses node metadata already present in the map. AI features send selected conversation text to the provider configured by the user. Exports are controlled by the user.
 
 See [Privacy Statement](docs/privacy-statement.md).
 
@@ -147,7 +156,7 @@ TurnMap requests the minimum permissions currently needed for the preview build:
 - `sidePanel` to provide the Edge side panel UI.
 - `storage` to save maps, settings, AI provider configuration, launcher position, and Float state locally.
 - `webRequest` to support full conversation extraction from ChatGPT backend requests when available.
-- Host access to supported AI chat websites, OpenAI, and DeepSeek.
+- Host access to supported AI chat websites and built-in AI provider API hosts.
 - Optional host access for custom OpenAI-compatible providers, requested only when the user configures a custom endpoint.
 
 See [Permission Review](docs/permissions-review.md).
@@ -199,14 +208,19 @@ scripts           Build and packaging helpers
 - `0.2.0`: add GitHub Release checks, ignored versions, remind-later update notices, and redacted debug reports.
 - `0.3.0`: add collaboration and advanced export paths. OPML and Obsidian vault Markdown are implemented; XMind remains the next priority before Anki CSV.
 - `0.4.0`: add adapters for ChatGPT, Gemini, Claude.ai, DeepSeek, Kimi, Doubao, Qwen, Google AI Studio, Perplexity, Grok, GLM / Z.ai / Zhipu Qingyan, Mistral Le Chat, and Arena / LMArena. After the current plan is complete, continue with MiniMax Agent.
-- `0.5.0`: expand API key and provider compatibility while preserving custom OpenAI-compatible endpoints as the fallback path.
-- `0.6.0`: add optional embedding-assisted topic analysis for long conversations or manual runs.
+- `0.5.0`: expand API key and provider compatibility with cost-aware presets for OpenAI, DeepSeek, OpenRouter, Qwen, Kimi, Doubao, Zhipu, Mistral, Gemini-compatible Vertex endpoints, and Custom OpenAI-compatible endpoints.
+- `0.5.1`: complete AI UI translation language packs with generation, import/export, JSON repair, local storage, and layout-safety safeguards.
+- `0.6.0`: add local Topic Analysis that preclassifies high-confidence candidate links for review without provider embeddings.
 - `0.7.0`: improve knowledge organization with smarter links, batch link review, topic collapse, and bulk tags.
 - `0.8.0`: migrate compatibility to Chrome; Firefox is reserved for a later sidebar-specific phase.
 - `0.9.0`: public beta with 100+ node performance, overflow-safe large-map export, and cancellable AI batch jobs.
 - `0.10.0`: prepare store publication, with Edge Add-ons first and Chrome Web Store following Chrome compatibility.
 - `1.0.0`: stable release after privacy, permissions, docs, QA, and install/recovery paths are complete.
 - `1.1.0`: experimental fine-grained graph expansion after the stable release.
+
+Release details:
+
+- [0.6.0 release notes](docs/release-notes-0.6.0.md) describe the changes since the previous GitHub push.
 
 ## Contributing
 

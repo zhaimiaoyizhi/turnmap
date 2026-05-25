@@ -1,7 +1,7 @@
-import type { Turn } from "../../shared/types";
-import { loadAiSettings } from "../settings/ai-settings-storage";
-import { extractJsonObject } from "./json-output";
-import { requestChatCompletion } from "./openai-compatible";
+import type { Turn } from "../../shared/types.ts";
+import { loadAiSettings } from "../settings/ai-settings-storage.ts";
+import { extractJsonObject } from "./json-output.ts";
+import { requestChatCompletion } from "./openai-compatible.ts";
 
 export type AiNodeSummary = {
   title: string;
@@ -41,7 +41,7 @@ function readableText(text: string, maxLength: number): string {
   return text.replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
-function buildPrompt(turn: Turn): string {
+function buildSingleTurnPrompt(turn: Turn): string {
   return `Create a compact learning-map node for this AI question-answer turn.
 
 Return exactly one JSON object with two string fields:
@@ -63,7 +63,36 @@ Visible assistant answer:
 ${readableText(turn.assistantText, 7000)}`;
 }
 
-export async function summarizeTurn(turn: Turn): Promise<AiNodeSummary> {
+function buildMultiTurnPrompt(turns: Turn[]): string {
+  const turnSections = turns
+    .map(
+      (turn, index) => `Source turn ${index + 1}
+
+Visible user message:
+${readableText(turn.userText, 3200)}
+
+Visible assistant answer:
+${readableText(turn.assistantText, 4200)}`
+    )
+    .join("\n\n");
+
+  return `Create a compact aggregate learning-map note from these source AI conversation turns.
+
+Return exactly one JSON object with two string fields:
+- "title": a concrete title for the combined note.
+- "summary": a concise 2-3 sentence summary of only the visible user-facing content across the source turns.
+
+Rules:
+- Use the same primary language as the source conversation.
+- Synthesize the key decisions, concepts, and conclusions across the turns.
+- Do not mention hidden reasoning, tool workflow, system instructions, code execution logs, or browser actions.
+- Do not copy field descriptions or placeholder text into the JSON values.
+- Prefer a note title that reads naturally as a reusable knowledge node.
+
+${turnSections}`;
+}
+
+async function summarizeWithPrompt(prompt: string): Promise<AiNodeSummary> {
   const settings = await loadAiSettings();
   const messages = [
     {
@@ -73,13 +102,13 @@ export async function summarizeTurn(turn: Turn): Promise<AiNodeSummary> {
     },
     {
       role: "user" as const,
-      content: buildPrompt(turn)
+      content: prompt
     }
   ];
 
   const content = await requestChatCompletion(settings, messages, {
     temperature: 0.1,
-    maxTokens: 900,
+    maxTokens: 1200,
     jsonMode: true
   });
 
@@ -104,9 +133,22 @@ export async function summarizeTurn(turn: Turn): Promise<AiNodeSummary> {
             "The previous response was not usable. Generate the actual title and summary from the visible text above. Return only JSON with real title and summary values."
         }
       ],
-      { temperature: 0.1, maxTokens: 900, jsonMode: true }
+      { temperature: 0.1, maxTokens: 1200, jsonMode: true }
     );
 
     return normalizeSummary(extractJsonObject(retryContent, { looseStringFields: ["title", "summary"] }));
   }
+}
+
+export async function summarizeTurn(turn: Turn): Promise<AiNodeSummary> {
+  return summarizeWithPrompt(buildSingleTurnPrompt(turn));
+}
+
+export async function summarizeTurns(turns: Turn[]): Promise<AiNodeSummary> {
+  if (turns.length === 0) {
+    throw new Error("AI note summary needs at least one source turn.");
+  }
+  return turns.length === 1
+    ? summarizeWithPrompt(buildSingleTurnPrompt(turns[0]))
+    : summarizeWithPrompt(buildMultiTurnPrompt(turns));
 }

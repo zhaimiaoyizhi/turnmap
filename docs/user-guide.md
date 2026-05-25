@@ -43,14 +43,22 @@ You can:
 - Merge, split, hide, or tag nodes.
 - Switch layouts.
 
-## AI Features
+## Organization And AI Features
 
-AI features require a configured provider and API key.
+Analyze Topics runs locally and does not require a configured provider or API key. AI summary, Suggest Links, AI translation, and auto summarize require a configured provider and API key.
 
+- Analyze Topics: preclassifies likely topic-related link candidates from node titles, summaries, tags, distance, and existing links. Candidates appear in the suggestion panel and must be accepted before the graph changes.
+- Link suggestions remain editable before acceptance. If there are more suggestions than fit on screen, the suggestion panel scrolls internally.
 - Summarize: creates compact titles and summaries.
-- Suggest Links: proposes strong semantic links between non-adjacent related nodes.
+- Turn nodes keep jump accuracy after AI summary or manual title/summary edits because TurnMap still jumps by stored source anchors, not by display text.
+- Deep-research-style folded replies may expose the user message before the full assistant answer. TurnMap can use mapped user-message anchors as a conservative fallback, but it will avoid jumping to an unmapped duplicate prompt.
+- Turn-node summary only fills blank or default title/summary fields; it does not overwrite fields you already rewrote by hand.
+- Custom note nodes tagged `#AI` can be summarized manually from their tracked source turns.
+- `#AI` note summary needs at least one tracked source turn. If a note has no source anchors yet, TurnMap will refuse the summary request instead of inventing unsupported context.
+- Suggest Links: asks the configured AI provider to propose strong semantic links between non-adjacent related nodes.
+- Suggest Links shows progress in the status bar while requesting, waiting for, filtering, and preparing suggestions for review.
 
-AI features send selected conversation text to the configured provider.
+Local topic analysis does not send conversation text to a provider. AI features send selected conversation text to the configured provider.
 
 ## Import And Export
 

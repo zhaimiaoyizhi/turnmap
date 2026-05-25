@@ -2,6 +2,72 @@
 
 All notable changes to TurnMap will be documented in this file.
 
+## [0.6.0] - Topic Analysis MVP
+
+Release notes: `docs/release-notes-0.6.0.md`.
+
+### Added
+
+- Added a local Topic Analysis action that preclassifies high-confidence candidate link pairs from node titles, summaries, tags, node distance, and existing links.
+- Added review-first topic candidates to the existing link suggestion panel, so users can accept, reject, or edit candidates before the graph changes.
+- Added sanitized task-log support and localized English/Chinese status copy for topic analysis runs.
+- Added unit coverage for candidate scoring, adjacent/existing-link filtering, candidate caps, task-log support, and localized UI wiring.
+- Added `CONTEXT.md` glossary entries for Topic Analysis, Candidate Link Pair, and API Refine to prevent future scope drift.
+- Added regression coverage for suggestion-panel overflow, link-suggestion progress status, and ChatGPT deep-research-style jump fallback.
+
+### Changed
+
+- Updated package and extension metadata to `0.6.0`.
+- Documented 0.6.0 as lightweight local topic analysis rather than provider embeddings or offline model embeddings.
+- Improved the link suggestion review panel so long candidate lists scroll inside the panel instead of being clipped.
+- Improved Suggest Links status updates so the status bar shows request, waiting, filtering, and review-ready phases.
+- Improved accepted-link behavior so suggestions become user-confirmed graph links immediately and bulk accept applies them in one batch.
+- Improved ChatGPT jump fallback for deep-research-style folded replies by allowing user-message anchors to locate a turn only when they can be mapped back to the target turn index.
+
+### Security
+
+- Topic Analysis runs locally and does not send node text, raw vectors, or provider responses to an external API.
+
+## [0.5.1] - AI Translation Language Packs
+
+### Added
+
+- Added standard JSON language packs with metadata for AI-generated and community-shared UI translations.
+- Added language code input, language pack import, and current custom language export in Settings.
+- Added validation for language pack schema, built-in language protection, placeholder preservation, missing-key reporting, and English fallback.
+- Added one automatic JSON repair request when AI translation returns malformed JSON, preventing common `Model did not return valid JSON` failures from ending the flow.
+- Added `sourceAnchors` persistence for custom note nodes so AI-note summaries can trace back to original source turns across saves and JSON import/export.
+
+### Changed
+
+- AI UI translation now generates a full TurnMap language pack instead of a raw key-value overlay.
+- Imported or AI-generated language packs can be selected from the language dropdown and remain stored locally.
+- Settings controls now use tighter wrapping/min-width safeguards so longer translated labels are less likely to overflow compact controls.
+- AI summary now protects user-edited turn titles and summaries, only filling fields that are still blank or default.
+- Custom note nodes tagged `#AI` can now run manual AI summary from their tracked source turns, while notes without source anchors fail with a clear status instead of overwriting arbitrary text.
+- AI summary and manual node text edits continue to preserve jump accuracy because jump resolution still uses stored source anchors instead of node display copy.
+
+## [0.5.0] - Provider Compatibility
+
+### Added
+
+- Added provider metadata and Settings presets for OpenAI, DeepSeek, OpenRouter, Qwen / DashScope, Kimi / Moonshot, Doubao / Volcano Ark, Zhipu / GLM, Mistral, Gemini compatible, and Custom OpenAI-compatible endpoints.
+- Added cost-aware default models that favor fast responses and large context windows, including `gpt-5.4-nano`, `deepseek-v4-flash`, `qwen/qwen3.5-flash-02-23`, `qwen3.5-flash`, `kimi-k2.6`, `doubao-seed-1-6-flash-250828`, `glm-4.7-flash`, `mistral-small-2603`, and `gemini-2.5-flash-lite` as the Gemini-compatible suggestion.
+- Added provider-specific UI notes explaining raw API key input, endpoint-ID style model fields, Gemini-compatible OAuth/project-path requirements, and preset availability limits.
+- Added unit coverage for provider metadata, provider switching, JSON-mode gating, empty-response retries, reasoning-only responses, sanitized task logs, and redacted debug reports.
+
+### Changed
+
+- Provider requests now build URLs from provider metadata with `stripTrailingSlash(baseUrl) + chatPath`.
+- TurnMap sends `response_format` only for providers marked as JSON-mode compatible and keeps the fallback retry when JSON mode is rejected.
+- Switching provider now clears the API key while preserving `maxTokens` and auto-summarize preferences.
+- Raised task-level output budgets to 1200 for summaries, 2400 for suggested links, and 6000 for AI UI translations while keeping the configurable maximum at 12000.
+- Updated README, Chinese README, AI Provider Guide, privacy, permissions, and package metadata for the 0.5.0 provider compatibility release.
+
+### Security
+
+- Task logs and debug reports now redact key-like values while preserving non-secret diagnostics such as provider id, host, model, and error category.
+
 ## [0.4.0] - Multi-Site AI Conversation Adapters
 
 ### Added

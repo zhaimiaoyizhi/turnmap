@@ -70,7 +70,13 @@ async function main() {
       "https://perplexity.ai/*",
       "https://grok.com/*",
       "https://api.openai.com/*",
-      "https://api.deepseek.com/*"
+      "https://api.deepseek.com/*",
+      "https://openrouter.ai/*",
+      "https://dashscope-intl.aliyuncs.com/*",
+      "https://api.moonshot.ai/*",
+      "https://ark.cn-beijing.volces.com/*",
+      "https://open.bigmodel.cn/*",
+      "https://api.mistral.ai/*"
     ],
     "Manifest host_permissions"
   );

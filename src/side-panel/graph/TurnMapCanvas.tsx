@@ -13,10 +13,11 @@ import {
   type Node,
   type ReactFlowInstance
 } from "@xyflow/react";
-import type { Turn } from "../../shared/types";
+import type { SourceAnchor, Turn } from "../../shared/types.ts";
 import { jumpToTurnInActiveTab } from "../../shared/messaging";
 import { suggestSemanticEdges } from "../ai/link-suggestions";
-import { summarizeTurn } from "../ai/node-summary";
+import { summarizeTurn, summarizeTurns } from "../ai/node-summary";
+import { buildTopicCandidatePairs } from "../ai/topic-analysis";
 import { Icon } from "../components/Icon";
 import type { I18nKey } from "../i18n/i18n-storage";
 import { useI18n } from "../i18n/useI18n";
@@ -53,6 +54,21 @@ import {
   isNodeColorName,
   type NodeColorName
 } from "./graph-colors";
+import {
+  mergeSourceAnchors,
+  normalizeNodeTags,
+  resolveSourceTurnsForAnchors,
+  sanitizeSourceAnchors,
+  sourceAnchorMatches,
+  sourceAnchorsFromNodeData
+} from "./source-anchors.ts";
+import {
+  applyProtectedTurnSummary,
+  canSummarizeAiNote,
+  hasSummarizableTurnField,
+  summaryFromTurn,
+  titleFromTurn
+} from "./summary-behavior.ts";
 import { buildCollapsedTopic } from "./topic-collapse";
 
 type TurnMapCanvasProps = {
@@ -79,6 +95,7 @@ type TurnNodeData = {
   isCustomNode?: boolean;
   status?: "open" | "review" | "done";
   tags?: string[];
+  sourceAnchors?: SourceAnchor[];
   color?: NodeColorName;
   collapsed?: boolean;
   important?: boolean;
@@ -95,6 +112,7 @@ type CustomNodeRecord = {
   summary: string;
   status?: "open" | "review" | "done";
   tags?: string[];
+  sourceAnchors?: SourceAnchor[];
   color?: NodeColorName;
   collapsed?: boolean;
   important?: boolean;
@@ -123,7 +141,7 @@ type RelationshipEdgeData = {
   important?: boolean;
   confidence?: number;
   reason?: string;
-  createdBy?: "ai" | "user";
+  createdBy?: "ai" | "user" | "topic-analysis";
 };
 
 type ExportedGraph = {
@@ -146,6 +164,7 @@ type ExportedGraph = {
     summary?: string;
     status?: "open" | "review" | "done";
     tags?: string[];
+    sourceAnchors?: SourceAnchor[];
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
@@ -161,7 +180,7 @@ type ExportedGraph = {
     important?: boolean;
     confidence?: number;
     reason?: string;
-    createdBy?: "ai" | "user";
+    createdBy?: "ai" | "user" | "topic-analysis";
     isAuto?: boolean;
   }>;
 };
@@ -215,16 +234,6 @@ const RELATIONSHIP_LABEL_KEYS = {
   todo: "relationship.todo"
 } satisfies Record<EdgeRelationship, I18nKey>;
 
-function titleFromTurn(turn: Turn): string {
-  const trimmed = turn.userText.trim();
-  return trimmed.length > 72 ? `${trimmed.slice(0, 72)}...` : trimmed;
-}
-
-function summaryFromTurn(turn: Turn): string {
-  const trimmed = turn.assistantText.trim();
-  return trimmed.length > 160 ? `${trimmed.slice(0, 160)}...` : trimmed;
-}
-
 function isDefaultRootSummary(summary?: string): boolean {
   return Boolean(summary?.trim().match(/^\d+\s+mapped turns$/i));
 }
@@ -267,11 +276,6 @@ function isGenericConversationRootTitle(title?: string): boolean {
 
 function rootTitleFromOverride(overrideTitle: string | undefined, conversationTitle: string): string {
   return overrideTitle && !isGenericConversationRootTitle(overrideTitle) ? overrideTitle : conversationTitle;
-}
-
-function nodeHasDefaultText(node: Node<TurnNodeData>): boolean {
-  if (!node.data.turn) return false;
-  return node.data.title === titleFromTurn(node.data.turn) && node.data.summary === summaryFromTurn(node.data.turn);
 }
 
 type TopicPosition = {
@@ -356,6 +360,7 @@ function nodesFromTurns(
       summary?: string;
       status?: "open" | "review" | "done";
       tags?: string[];
+      sourceAnchors?: SourceAnchor[];
       color?: NodeColorName;
       collapsed?: boolean;
       important?: boolean;
@@ -385,7 +390,7 @@ function nodesFromTurns(
           ? rootOverride.summary
           : `${turns.length} mapped turns`,
       status: rootOverride?.status,
-      tags: rootOverride?.tags,
+      tags: normalizeNodeTags(rootOverride?.tags),
       color: rootOverride?.color,
       collapsed: rootOverride?.collapsed,
       important: rootOverride?.important,
@@ -404,10 +409,11 @@ function nodesFromTurns(
       title: nodeOverrides[turn.id]?.title ?? titleFromTurn(turn),
       summary: nodeOverrides[turn.id]?.summary ?? summaryFromTurn(turn),
       status: nodeOverrides[turn.id]?.status,
-      tags: nodeOverrides[turn.id]?.tags,
+      tags: normalizeNodeTags(nodeOverrides[turn.id]?.tags),
       color: nodeOverrides[turn.id]?.color,
       collapsed: nodeOverrides[turn.id]?.collapsed,
       important: nodeOverrides[turn.id]?.important,
+      sourceAnchors: sanitizeSourceAnchors(nodeOverrides[turn.id]?.sourceAnchors ?? [turn.sourceAnchor]),
       turn,
       onUpdate,
       onSummarize,
@@ -424,7 +430,8 @@ function nodesFromTurns(
       title: nodeOverrides[node.id]?.title ?? node.title,
       summary: nodeOverrides[node.id]?.summary ?? node.summary,
       status: nodeOverrides[node.id]?.status ?? node.status,
-      tags: nodeOverrides[node.id]?.tags ?? node.tags,
+      tags: normalizeNodeTags(nodeOverrides[node.id]?.tags ?? node.tags),
+      sourceAnchors: sanitizeSourceAnchors(nodeOverrides[node.id]?.sourceAnchors ?? node.sourceAnchors),
       color: nodeOverrides[node.id]?.color ?? node.color,
       collapsed: nodeOverrides[node.id]?.collapsed ?? node.collapsed,
       important: nodeOverrides[node.id]?.important ?? node.important,
@@ -514,6 +521,76 @@ function edgeHasExistingNodes(edge: Edge, nodeIds: Set<string>): boolean {
   return Boolean(edge.source && edge.target && nodeIds.has(edge.source) && nodeIds.has(edge.target));
 }
 
+function turnHashesFromNodeId(nodeId: string): { userHash: string; assistantHash: string } | null {
+  const match = nodeId.match(/^turn-\d+-(.+)-(.+)$/);
+  if (!match) return null;
+  return {
+    userHash: match[1],
+    assistantHash: match[2]
+  };
+}
+
+function storedTurnEntryMatches(
+  storedNodeId: string,
+  override: { sourceAnchors?: SourceAnchor[] } | undefined,
+  turn: Turn
+): boolean {
+  const anchors = sanitizeSourceAnchors(override?.sourceAnchors);
+  if (anchors?.some((anchor) => sourceAnchorMatches(anchor, turn.sourceAnchor))) return true;
+
+  const hashes = turnHashesFromNodeId(storedNodeId);
+  return Boolean(
+    hashes &&
+      hashes.userHash === turn.sourceAnchor.userHash &&
+      hashes.assistantHash === turn.sourceAnchor.assistantHash
+  );
+}
+
+function buildStoredTurnIdMap(
+  turns: Turn[],
+  nodeOverrides: Record<string, { sourceAnchors?: SourceAnchor[] }>
+): Map<string, string> {
+  const idMap = new Map<string, string>();
+
+  Object.entries(nodeOverrides).forEach(([storedNodeId, override]) => {
+    if (!storedNodeId.startsWith("turn-")) return;
+    if (turns.some((turn) => turn.id === storedNodeId)) return;
+
+    const match = turns.find((turn) => storedTurnEntryMatches(storedNodeId, override, turn));
+    if (match) idMap.set(storedNodeId, match.id);
+  });
+
+  return idMap;
+}
+
+function remapRecordKeys<T>(record: Record<string, T>, idMap: Map<string, string>): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).map(([id, value]) => [idMap.get(id) ?? id, value]));
+}
+
+function remapNodeIds(nodeIds: string[], idMap: Map<string, string>): string[] {
+  return [...new Set(nodeIds.map((id) => idMap.get(id) ?? id))];
+}
+
+function remapCompoundId(id: string, idMap: Map<string, string>): string {
+  let nextId = id;
+  idMap.forEach((nextTurnId, previousTurnId) => {
+    nextId = nextId.split(previousTurnId).join(nextTurnId);
+  });
+  return nextId;
+}
+
+function remapStoredEdge(edge: Edge, idMap: Map<string, string>): Edge {
+  const source = idMap.get(edge.source) ?? edge.source;
+  const target = idMap.get(edge.target) ?? edge.target;
+
+  return {
+    ...edge,
+    id: remapCompoundId(edge.id, idMap),
+    source,
+    target
+  };
+}
+
 function graphNodesMatchTurns(nodes: Node<TurnNodeData>[], turns: Turn[], hiddenNodeIds: string[] = []): boolean {
   const hidden = new Set(hiddenNodeIds);
   const turnIds = new Set(turns.filter((turn) => !hidden.has(turn.id)).map((turn) => turn.id));
@@ -574,6 +651,19 @@ function applyEdgeStyle(edge: Edge): Edge {
   };
 }
 
+function acceptedSuggestionEdge(suggestion: Edge): Edge {
+  const data = suggestion.data as RelationshipEdgeData | undefined;
+  return applyEdgeStyle({
+    ...suggestion,
+    id: `user-${suggestion.id}`,
+    data: {
+      ...data,
+      relationship: data?.relationship ?? "related",
+      createdBy: "user"
+    } satisfies RelationshipEdgeData
+  });
+}
+
 function isAutoEdge(edge: Edge): boolean {
   return edge.id.startsWith("conversation-root-") || edge.id.startsWith("sequence-");
 }
@@ -587,6 +677,7 @@ function nodeOverridesFromNodes(
     summary?: string;
     status?: "open" | "review" | "done";
     tags?: string[];
+    sourceAnchors?: SourceAnchor[];
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
@@ -599,7 +690,8 @@ function nodeOverridesFromNodes(
         title: typeof node.data?.title === "string" ? node.data.title : undefined,
         summary: typeof node.data?.summary === "string" ? node.data.summary : undefined,
         status: node.data.status,
-        tags: node.data.tags,
+        tags: normalizeNodeTags(node.data.tags),
+        sourceAnchors: sanitizeSourceAnchors(node.data.sourceAnchors),
         color: node.data.color,
         collapsed: node.data.collapsed,
         important: node.data.important
@@ -617,11 +709,17 @@ function customRecordsFromNodes(nodes: Node<TurnNodeData>[]): CustomNodeRecord[]
       title: node.data.title,
       summary: node.data.summary,
       status: node.data.status,
-      tags: node.data.tags,
+      tags: normalizeNodeTags(node.data.tags),
+      sourceAnchors: sanitizeSourceAnchors(node.data.sourceAnchors),
       color: node.data.color,
       collapsed: node.data.collapsed,
       important: node.data.important
     }));
+}
+
+function mergedSourceAnchorsForNodes(nodes: Node<TurnNodeData>[]): SourceAnchor[] | undefined {
+  const merged = mergeSourceAnchors(...nodes.map((node) => sourceAnchorsFromNodeData(node.data)));
+  return merged.length > 0 ? merged : undefined;
 }
 
 function nodeTitleById(nodes: Node<TurnNodeData>[]): Map<string, string> {
@@ -849,6 +947,7 @@ function serializeGraph(
       summary: node.data.summary,
       status: node.data.status,
       tags: node.data.tags,
+      sourceAnchors: sanitizeSourceAnchors(node.data.sourceAnchors),
       color: node.data.color,
       collapsed: node.data.collapsed,
       important: node.data.important,
@@ -1279,7 +1378,19 @@ function positionsFromImportedGraph(graph: ExportedGraph): Record<string, { x: n
 
 function overridesFromImportedGraph(
   graph: ExportedGraph
-): Record<string, { title?: string; summary?: string; status?: "open" | "review" | "done"; tags?: string[] }> {
+): Record<
+  string,
+  {
+    title?: string;
+    summary?: string;
+    status?: "open" | "review" | "done";
+    tags?: string[];
+    sourceAnchors?: SourceAnchor[];
+    color?: NodeColorName;
+    collapsed?: boolean;
+    important?: boolean;
+  }
+> {
   return Object.fromEntries(
     (graph.nodes ?? [])
       .filter((node) => typeof node.id === "string")
@@ -1293,6 +1404,7 @@ function overridesFromImportedGraph(
               ? node.status
               : undefined,
           tags: Array.isArray(node.tags) ? node.tags.filter((tag) => typeof tag === "string") : undefined,
+          sourceAnchors: sanitizeSourceAnchors(node.sourceAnchors),
           color: isNodeColorName(node.color) ? node.color : undefined,
           collapsed: typeof node.collapsed === "boolean" ? node.collapsed : undefined,
           important: typeof node.important === "boolean" ? node.important : undefined
@@ -1315,6 +1427,7 @@ function customNodesFromImportedGraph(graph: ExportedGraph): CustomNodeRecord[] 
       status:
         node.status === "open" || node.status === "review" || node.status === "done" ? node.status : undefined,
       tags: Array.isArray(node.tags) ? node.tags.filter((tag) => typeof tag === "string") : undefined,
+      sourceAnchors: sanitizeSourceAnchors(node.sourceAnchors),
       color: isNodeColorName(node.color) ? node.color : undefined,
       collapsed: typeof node.collapsed === "boolean" ? node.collapsed : undefined,
       important: typeof node.important === "boolean" ? node.important : undefined
@@ -1326,7 +1439,11 @@ function cloneSnapshot(snapshot: GraphSnapshot): GraphSnapshot {
     nodes: snapshot.nodes.map((node) => ({
       ...node,
       position: { ...node.position },
-      data: { ...node.data, tags: node.data.tags ? [...node.data.tags] : undefined }
+      data: {
+        ...node.data,
+        tags: node.data.tags ? [...node.data.tags] : undefined,
+        sourceAnchors: sanitizeSourceAnchors(node.data.sourceAnchors)
+      }
     })),
     edges: snapshot.edges.map((edge) => ({
       ...edge,
@@ -1348,6 +1465,7 @@ function snapshotKey(snapshot: GraphSnapshot): string {
         summary: node.data.summary,
         status: node.data.status,
         tags: node.data.tags,
+        sourceAnchors: node.data.sourceAnchors,
         isCustomNode: node.data.isCustomNode
       },
       selected: node.selected
@@ -1387,6 +1505,7 @@ export function TurnMapCanvas({
   const [summarizingNodeIds, setSummarizingNodeIds] = useState<Set<string>>(() => new Set());
   const [pendingSuggestedEdges, setPendingSuggestedEdges] = useState<Edge[]>([]);
   const [suggestingLinks, setSuggestingLinks] = useState(false);
+  const [analyzingTopics, setAnalyzingTopics] = useState(false);
   const [autoSummarize, setAutoSummarize] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1395,6 +1514,7 @@ export function TurnMapCanvas({
   const [redoStack, setRedoStack] = useState<GraphSnapshot[]>([]);
   const saveTimer = useRef<number | null>(null);
   const historyTimer = useRef<number | null>(null);
+  const nodesRef = useRef<Node<TurnNodeData>[]>([]);
   const lastHistorySnapshot = useRef<GraphSnapshot | null>(null);
   const restoringHistory = useRef(false);
   const loadedConversationId = useRef<string | null>(null);
@@ -1435,6 +1555,11 @@ export function TurnMapCanvas({
         .join(" ")
     }));
   }, [highlightedEndpointIds, nodes]);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
   const currentSnapshot = useCallback(
     (): GraphSnapshot => {
       const snapshot = cloneSnapshot({
@@ -1563,8 +1688,34 @@ export function TurnMapCanvas({
 
   const summarizeNode = useCallback(
     async (nodeId: string) => {
-      const turn = turns.find((candidate) => candidate.id === nodeId);
-      if (!turn) return;
+      const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
+      if (!node || node.data.isConversationRoot) return;
+
+      const turn = node.data.turn;
+      const isAiNote = canSummarizeAiNote(node.data);
+      const sourceTurns = isAiNote ? resolveSourceTurnsForAnchors(turns, node.data.sourceAnchors) : [];
+
+      if (!turn && !isAiNote) return;
+      if (turn && !hasSummarizableTurnField(node.data)) {
+        reportApiTask({
+          id: `summarize-${conversationId}-${nodeId}-skipped`,
+          kind: "summarize",
+          status: "success",
+          message: t("task.summarizeSkippedEdited"),
+          progress: 100
+        });
+        return;
+      }
+      if (isAiNote && sourceTurns.length === 0) {
+        reportApiTask({
+          id: `summarize-${conversationId}-${nodeId}-no-source`,
+          kind: "summarize",
+          status: "error",
+          message: t("task.summarizeNoteNeedsSource"),
+          progress: 100
+        });
+        return;
+      }
 
       setSummarizingNodeIds((currentIds) => new Set(currentIds).add(nodeId));
       const taskId = `summarize-${conversationId}-${nodeId}`;
@@ -1572,31 +1723,49 @@ export function TurnMapCanvas({
         id: taskId,
         kind: "summarize",
         status: "running",
-        message: t("task.summarizeOne", { current: turn.turnIndex + 1 }),
+        message: turn
+          ? t("task.summarizeOne", { current: turn.turnIndex + 1 })
+          : t("task.summarizeNote", { count: sourceTurns.length }),
         progress: 5
       });
 
       try {
-        const summary = await summarizeTurn(turn);
+        const summary = turn ? await summarizeTurn(turn) : await summarizeTurns(sourceTurns);
+        let blocked = false;
         setNodes((currentNodes) =>
-          currentNodes.map((node) =>
-            node.id === nodeId
-              ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    title: summary.title,
-                    summary: summary.summary
-                  }
+          currentNodes.map((currentNode) => {
+            if (currentNode.id !== nodeId) return currentNode;
+            if (currentNode.data.turn) {
+              const protectedSummary = applyProtectedTurnSummary(currentNode.data, summary);
+              blocked = protectedSummary.blocked;
+              if (protectedSummary.blocked) return currentNode;
+              return {
+                ...currentNode,
+                data: {
+                  ...currentNode.data,
+                  ...protectedSummary.updates
                 }
-              : node
-          )
+              };
+            }
+            return {
+              ...currentNode,
+              data: {
+                ...currentNode.data,
+                title: summary.title,
+                summary: summary.summary
+              }
+            };
+          })
         );
         reportApiTask({
           id: taskId,
           kind: "summarize",
           status: "success",
-          message: t("task.summarizeOneDone", { current: turn.turnIndex + 1 }),
+          message: blocked
+            ? t("task.summarizeSkippedEdited")
+            : turn
+              ? t("task.summarizeOneDone", { current: turn.turnIndex + 1 })
+              : t("task.summarizeNoteDone"),
           progress: 100
         });
       } catch (error) {
@@ -1620,44 +1789,56 @@ export function TurnMapCanvas({
 
   const summarizeAllNodes = useCallback(async () => {
     if (summarizingNodeIds.size > 0) return;
-    if (turns.length === 0) return;
+    const candidates = nodes.filter(
+      (node) => node.data.turn && !node.data.isConversationRoot && hasSummarizableTurnField(node.data)
+    );
+    if (candidates.length === 0) return;
 
-    setSummarizingNodeIds(new Set(turns.map((turn) => turn.id)));
+    setSummarizingNodeIds(new Set(candidates.map((node) => node.id)));
     const taskId = `summarize-all-${conversationId}`;
     reportApiTask({
       id: taskId,
       kind: "summarize",
       status: "running",
-      message: t("task.summarizeAll", { total: turns.length }),
+      message: t("task.summarizeAll", { total: candidates.length }),
       progress: 0
     });
     let completed = 0;
     let failed = false;
 
-    for (const turn of turns) {
+    for (const node of candidates) {
+      const turn = node.data.turn;
+      if (!turn) continue;
       try {
         const summary = await summarizeTurn(turn);
+        let updated = false;
         setNodes((currentNodes) =>
           currentNodes.map((node) =>
             node.id === turn.id
-              ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    title: summary.title,
-                    summary: summary.summary
-                  }
-                }
+              ? (() => {
+                  const protectedSummary = applyProtectedTurnSummary(node.data, summary);
+                  if (protectedSummary.blocked) return node;
+                  updated = true;
+                  return {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      ...protectedSummary.updates
+                    }
+                  };
+                })()
               : node
           )
         );
-        completed += 1;
+        if (updated) {
+          completed += 1;
+        }
         reportApiTask({
           id: taskId,
           kind: "summarize",
           status: "running",
-          message: t("task.summarizeProgress", { current: completed, total: turns.length }),
-          progress: Math.round((completed / turns.length) * 100)
+          message: t("task.summarizeProgress", { current: completed, total: candidates.length }),
+          progress: Math.round((completed / candidates.length) * 100)
         });
       } catch (error) {
         reportApiTask({
@@ -1665,7 +1846,7 @@ export function TurnMapCanvas({
           kind: "summarize",
           status: "error",
           message: error instanceof Error ? error.message : t("task.summarizeFailed"),
-          progress: Math.round((completed / turns.length) * 100)
+          progress: Math.round((completed / candidates.length) * 100)
         });
         failed = true;
         break;
@@ -1687,7 +1868,7 @@ export function TurnMapCanvas({
         progress: 100
       });
     }
-  }, [conversationId, reportApiTask, setNodes, summarizingNodeIds.size, t, turns]);
+  }, [conversationId, nodes, reportApiTask, setNodes, summarizingNodeIds.size, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1712,11 +1893,20 @@ export function TurnMapCanvas({
 
       const activeLayout = shouldRebuild ? defaultLayout : (storedGraph?.layoutMode ?? defaultLayout);
       const activeHiddenRoot = shouldRebuild ? false : (storedGraph?.hiddenRoot ?? false);
-      const activeHiddenAutoEdgeIds = shouldRebuild ? [] : (storedGraph?.hiddenAutoEdgeIds ?? []);
-      const activeHiddenNodeIds = shouldRebuild ? [] : (storedGraph?.hiddenNodeIds ?? []);
-      const storedPositions = !shouldRebuild && storedGraph?.schemaVersion && storedGraph.schemaVersion >= 2 ? storedGraph.positions : {};
-      const storedCustomNodes = shouldRebuild ? [] : (storedGraph?.customNodes ?? []);
       const storedNodeOverrides = shouldRebuild ? {} : (storedGraph?.nodeOverrides ?? {});
+      const storedTurnIdMap = buildStoredTurnIdMap(turns, storedNodeOverrides);
+      const activeHiddenAutoEdgeIds = shouldRebuild
+        ? []
+        : [...new Set((storedGraph?.hiddenAutoEdgeIds ?? []).map((id) => remapCompoundId(id, storedTurnIdMap)))];
+      const activeHiddenNodeIds = shouldRebuild
+        ? []
+        : remapNodeIds(storedGraph?.hiddenNodeIds ?? [], storedTurnIdMap);
+      const storedPositions =
+        !shouldRebuild && storedGraph?.schemaVersion && storedGraph.schemaVersion >= 2
+          ? remapRecordKeys(storedGraph.positions, storedTurnIdMap)
+          : {};
+      const storedCustomNodes = shouldRebuild ? [] : (storedGraph?.customNodes ?? []);
+      const activeNodeOverrides = shouldRebuild ? {} : remapRecordKeys(storedNodeOverrides, storedTurnIdMap);
       setLayoutMode(activeLayout);
       setHiddenRoot(activeHiddenRoot);
       setHiddenAutoEdgeIds(activeHiddenAutoEdgeIds);
@@ -1734,12 +1924,14 @@ export function TurnMapCanvas({
       ]);
       const validUserEdges = shouldRebuild
         ? []
-        : (storedGraph?.userEdges.filter((edge) => edgeHasExistingNodes(edge, nodeIds)) ?? []);
+        : (storedGraph?.userEdges
+            .map((edge) => remapStoredEdge(edge, storedTurnIdMap))
+            .filter((edge) => edgeHasExistingNodes(edge, nodeIds)) ?? []);
       const nextNodes = nodesFromTurns(
         conversationTitle,
         turns,
         storedPositions,
-        storedNodeOverrides,
+        activeNodeOverrides,
         updateNodeText,
         summarizeNode,
         jumpToNodeTurn,
@@ -1863,7 +2055,7 @@ export function TurnMapCanvas({
   useEffect(() => {
     if (!autoSummarize || autoSummarizeRunning.current) return;
     const candidates = nodes
-      .filter((node) => !node.data.isConversationRoot && nodeHasDefaultText(node))
+      .filter((node) => node.data.turn && !node.data.isConversationRoot && hasSummarizableTurnField(node.data))
       .filter((node) => !autoSummarizedNodeIds.current.has(node.id))
       .filter((node) => !summarizingNodeIds.has(node.id));
 
@@ -1891,20 +2083,25 @@ export function TurnMapCanvas({
         try {
           const summary = await summarizeTurn(node.data.turn);
           if (cancelled) break;
+          let updated = false;
           setNodes((currentNodes) =>
             currentNodes.map((currentNode) => {
-              if (currentNode.id !== node.id || !nodeHasDefaultText(currentNode)) return currentNode;
+              if (currentNode.id !== node.id || !currentNode.data.turn) return currentNode;
+              const protectedSummary = applyProtectedTurnSummary(currentNode.data, summary);
+              if (protectedSummary.blocked) return currentNode;
+              updated = true;
               return {
                 ...currentNode,
                 data: {
                   ...currentNode.data,
-                  title: summary.title,
-                  summary: summary.summary
+                  ...protectedSummary.updates
                 }
               };
             })
           );
-          completed += 1;
+          if (updated) {
+            completed += 1;
+          }
           reportApiTask({
             id: taskId,
             kind: "summarize",
@@ -1946,7 +2143,7 @@ export function TurnMapCanvas({
       cancelled = true;
       autoSummarizeRunning.current = false;
     };
-  }, [autoSummarize, conversationId, nodes.length, reportApiTask, setNodes, t]);
+  }, [autoSummarize, conversationId, nodes, reportApiTask, setNodes, t]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -2107,6 +2304,7 @@ export function TurnMapCanvas({
         return `${turnLabel}: ${node.data.summary}`;
       })
       .join("\n\n");
+    const sourceAnchors = mergedSourceAnchorsForNodes(sortedNodes);
 
     setHiddenNodeIds((currentIds) => [...new Set([...currentIds, ...sourceIds])]);
     setNodes((currentNodes) => [
@@ -2120,6 +2318,7 @@ export function TurnMapCanvas({
           title: mergedTitle,
           summary: mergedSummary,
           isCustomNode: true,
+          sourceAnchors,
           onUpdate: updateNodeText
         }
       }
@@ -2161,6 +2360,7 @@ export function TurnMapCanvas({
     });
     const sourceIds = new Set(topic.hiddenNodeIds);
     const hasRoot = nodes.some((node) => node.id === "conversation-root");
+    const sourceAnchors = mergedSourceAnchorsForNodes(selectedTurnNodes);
 
     setHiddenNodeIds((currentIds) => [...new Set([...currentIds, ...topic.hiddenNodeIds])]);
     setNodes((currentNodes) => [
@@ -2178,6 +2378,7 @@ export function TurnMapCanvas({
           isCustomNode: true,
           status: "review",
           tags: topic.tags,
+          sourceAnchors,
           onUpdate: updateNodeText
         }
       }
@@ -2213,6 +2414,7 @@ export function TurnMapCanvas({
     if (!sourceNode?.data.turn) return;
 
     const noteId = `custom-note-${Date.now()}`;
+    const sourceAnchors = sourceAnchorsFromNodeData(sourceNode.data);
     setNodes((currentNodes) => [
       ...currentNodes.map((node) => ({ ...node, selected: false })),
       {
@@ -2227,6 +2429,7 @@ export function TurnMapCanvas({
           title: `Note: ${sourceNode.data.title}`.slice(0, 120),
           summary: sourceNode.data.summary,
           isCustomNode: true,
+          sourceAnchors,
           onUpdate: updateNodeText
         }
       }
@@ -2248,7 +2451,9 @@ export function TurnMapCanvas({
       paragraphs.length >= 2
         ? [paragraphs.slice(0, midpoint).join(" "), paragraphs.slice(midpoint).join(" ")]
         : [sourceNode.data.summary.slice(0, Math.ceil(sourceNode.data.summary.length / 2)), sourceNode.data.summary.slice(Math.ceil(sourceNode.data.summary.length / 2))];
-    const splitIds = [`custom-split-${Date.now()}-a`, `custom-split-${Date.now()}-b`];
+    const splitTime = Date.now();
+    const splitIds = [`custom-split-${splitTime}-a`, `custom-split-${splitTime}-b`];
+    const sourceAnchors = sourceAnchorsFromNodeData(sourceNode.data);
     const splitNodes: Node<TurnNodeData>[] = splitIds.map((id, index) => ({
       id,
       type: "turnNode",
@@ -2263,6 +2468,7 @@ export function TurnMapCanvas({
         isCustomNode: true,
         status: sourceNode.data.status,
         tags: sourceNode.data.tags,
+        sourceAnchors,
         onUpdate: updateNodeText
       }
     }));
@@ -2337,8 +2543,8 @@ export function TurnMapCanvas({
           ? {
               ...node,
               data: {
-                ...node.data,
-                tags: [...new Set([...(node.data.tags ?? []), cleanTag])]
+              ...node.data,
+                tags: normalizeNodeTags([...(node.data.tags ?? []), cleanTag])
               }
             }
           : node
@@ -2390,6 +2596,10 @@ export function TurnMapCanvas({
     const noteId = `custom-edge-note-${Date.now()}`;
     const sourceNode = nodes.find((node) => node.id === selectedEdge.source);
     const targetNode = nodes.find((node) => node.id === selectedEdge.target);
+    const sourceAnchors = mergeSourceAnchors(
+      sourceNode ? sourceAnchorsFromNodeData(sourceNode.data) : undefined,
+      targetNode ? sourceAnchorsFromNodeData(targetNode.data) : undefined
+    );
     const position = {
       x: ((sourceNode?.position.x ?? 0) + (targetNode?.position.x ?? 340)) / 2,
       y: ((sourceNode?.position.y ?? 0) + (targetNode?.position.y ?? 160)) / 2 + 120
@@ -2413,6 +2623,7 @@ export function TurnMapCanvas({
             .join("\n"),
           isCustomNode: true,
           tags: ["link-note"],
+          sourceAnchors: sourceAnchors.length > 0 ? sourceAnchors : undefined,
           onUpdate: updateNodeText
         }
       }
@@ -2449,7 +2660,21 @@ export function TurnMapCanvas({
         message: t("task.suggestLinks"),
         progress: 15
       });
+      reportApiTask({
+        id: taskId,
+        kind: "suggest-links",
+        status: "running",
+        message: t("task.suggestLinksRequesting"),
+        progress: 45
+      });
       const suggestedEdges = (await suggestSemanticEdges(nodes)).map(applyEdgeStyle);
+      reportApiTask({
+        id: taskId,
+        kind: "suggest-links",
+        status: "running",
+        message: t("task.suggestLinksFiltering"),
+        progress: 85
+      });
       const existingPairs = new Set([
         ...edges.map((edge) => `${edge.source}:${edge.target}`),
         ...pendingSuggestedEdges.map((edge) => `${edge.source}:${edge.target}`)
@@ -2478,6 +2703,73 @@ export function TurnMapCanvas({
     }
   }, [conversationId, edges, nodes, pendingSuggestedEdges, reportApiTask, t]);
 
+  const analyzeTopics = useCallback(() => {
+    const taskId = `analyze-topics-${conversationId}`;
+    try {
+      setAnalyzingTopics(true);
+      reportApiTask({
+        id: taskId,
+        kind: "analyze-topics",
+        status: "running",
+        message: t("task.analyzeTopics"),
+        progress: 20
+      });
+      const existingLinks = [
+        ...edges.map((edge) => ({ source: edge.source, target: edge.target })),
+        ...pendingSuggestedEdges.map((edge) => ({ source: edge.source, target: edge.target }))
+      ];
+      const candidatePairs = buildTopicCandidatePairs(
+        nodes.map((node, fallbackOrder) => ({
+          id: node.id,
+          title: String(node.data?.title ?? node.id),
+          summary: String(node.data?.summary ?? ""),
+          tags: Array.isArray(node.data?.tags) ? node.data.tags : [],
+          order: node.data?.turn?.turnIndex ?? fallbackOrder
+        })),
+        { existingLinks }
+      );
+      const suggestedEdges = candidatePairs
+        .map(
+          (candidate): Edge =>
+            applyEdgeStyle({
+              id: `topic-${candidate.source}-${candidate.target}`,
+              source: candidate.source,
+              target: candidate.target,
+              label: candidate.label,
+              data: {
+                relationship: candidate.relationship,
+                confidence: candidate.confidence,
+                reason: candidate.reason,
+                createdBy: "topic-analysis"
+              } satisfies RelationshipEdgeData
+            })
+        )
+        .filter((edge) => edge.source !== "conversation-root" && edge.target !== "conversation-root");
+
+      setPendingSuggestedEdges((currentEdges) => [...currentEdges, ...suggestedEdges]);
+      reportApiTask({
+        id: taskId,
+        kind: "analyze-topics",
+        status: "success",
+        message:
+          suggestedEdges.length > 0
+            ? t("task.analyzeTopicsDone", { count: suggestedEdges.length })
+            : t("task.analyzeTopicsNone"),
+        progress: 100
+      });
+    } catch (error) {
+      reportApiTask({
+        id: taskId,
+        kind: "analyze-topics",
+        status: "error",
+        message: error instanceof Error ? error.message : t("task.analyzeTopicsFailed"),
+        progress: 100
+      });
+    } finally {
+      setAnalyzingTopics(false);
+    }
+  }, [conversationId, edges, nodes, pendingSuggestedEdges, reportApiTask, t]);
+
   const updatePendingSuggestion = useCallback(
     (edgeId: string, updates: Partial<RelationshipEdgeData> & { label?: string }) => {
       setPendingSuggestedEdges((currentEdges) =>
@@ -2503,25 +2795,20 @@ export function TurnMapCanvas({
     []
   );
 
-  const rejectPendingSuggestion = useCallback((edgeId: string) => {
-    setPendingSuggestedEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== edgeId));
-  }, []);
+  const rejectPendingSuggestion = useCallback(
+    (edgeId: string) => {
+      setPendingSuggestedEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== edgeId));
+      onStatus?.(t("suggestions.rejectedStatus"));
+    },
+    [onStatus, t]
+  );
 
   const acceptPendingSuggestion = useCallback(
     (edgeId: string) => {
       const suggestion = pendingSuggestedEdges.find((edge) => edge.id === edgeId);
       if (!suggestion) return;
 
-      const edgeToAdd = applyEdgeStyle({
-        ...suggestion,
-        id: `user-${suggestion.id}`,
-        data: {
-          ...(suggestion.data as RelationshipEdgeData | undefined),
-          relationship:
-            (suggestion.data as RelationshipEdgeData | undefined)?.relationship ?? "related",
-          createdBy: "ai"
-        } satisfies RelationshipEdgeData
-      });
+      const edgeToAdd = acceptedSuggestionEdge(suggestion);
 
       setEdges((currentEdges) => {
         const exists = currentEdges.some(
@@ -2530,17 +2817,38 @@ export function TurnMapCanvas({
         return exists ? currentEdges : [...currentEdges, edgeToAdd];
       });
       setPendingSuggestedEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== edgeId));
+      onStatus?.(
+        t("suggestions.acceptedStatus", {
+          source: shortNodeTitle(nodes, suggestion.source),
+          target: shortNodeTitle(nodes, suggestion.target)
+        })
+      );
     },
-    [pendingSuggestedEdges, setEdges]
+    [nodes, onStatus, pendingSuggestedEdges, setEdges, t]
   );
 
   const acceptAllPendingSuggestions = useCallback(() => {
-    pendingSuggestedEdges.forEach((edge) => acceptPendingSuggestion(edge.id));
-  }, [acceptPendingSuggestion, pendingSuggestedEdges]);
+    if (pendingSuggestedEdges.length === 0) return;
+    const edgesToAdd = pendingSuggestedEdges.map(acceptedSuggestionEdge);
+    setEdges((currentEdges) => {
+      const existingPairs = new Set(currentEdges.map((edge) => `${edge.source}:${edge.target}`));
+      const uniqueEdgesToAdd = edgesToAdd.filter((edge) => {
+        const pairKey = `${edge.source}:${edge.target}`;
+        if (existingPairs.has(pairKey)) return false;
+        existingPairs.add(pairKey);
+        return true;
+      });
+      return uniqueEdgesToAdd.length > 0 ? [...currentEdges, ...uniqueEdgesToAdd] : currentEdges;
+    });
+    setPendingSuggestedEdges([]);
+    onStatus?.(t("suggestions.acceptedAllStatus", { count: pendingSuggestedEdges.length }));
+  }, [onStatus, pendingSuggestedEdges, setEdges, t]);
 
   const clearPendingSuggestions = useCallback(() => {
+    const count = pendingSuggestedEdges.length;
     setPendingSuggestedEdges([]);
-  }, []);
+    onStatus?.(t("suggestions.clearedStatus", { count }));
+  }, [onStatus, pendingSuggestedEdges.length, t]);
 
   const exportJson = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.json`;
@@ -2561,7 +2869,7 @@ export function TurnMapCanvas({
       ),
       "application/json"
     );
-    onStatus?.(`Exported ${filename}`);
+    onStatus?.(t("file.exported", { filename }));
   }, [
     conversationId,
     conversationTitle,
@@ -2572,7 +2880,8 @@ export function TurnMapCanvas({
     layoutMode,
     nodes,
     onStatus,
-    turns
+    turns,
+    t
   ]);
 
   const markdown = useMemo(
@@ -2583,17 +2892,17 @@ export function TurnMapCanvas({
   const exportMarkdown = useCallback(() => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.md`;
     downloadTextFile(filename, markdown, "text/markdown;charset=utf-8");
-    onStatus?.(`Exported ${filename}`);
-  }, [conversationTitle, markdown, onStatus]);
+    onStatus?.(t("file.exported", { filename }));
+  }, [conversationTitle, markdown, onStatus, t]);
 
   const copyMarkdown = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(markdown);
-      onStatus?.("Markdown copied to clipboard");
+      onStatus?.(t("file.markdownCopied"));
     } catch {
-      onStatus?.("Clipboard copy failed. Try Markdown export instead.");
+      onStatus?.(t("file.markdownCopyFailed"));
     }
-  }, [markdown, onStatus]);
+  }, [markdown, onStatus, t]);
 
   const exportObsidianCanvas = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.canvas`;
@@ -2603,8 +2912,8 @@ export function TurnMapCanvas({
       graphToObsidianCanvas(conversationTitle, nodes, edges, appearance),
       "application/json"
     );
-    onStatus?.(`Exported ${filename}`);
-  }, [conversationTitle, edges, nodes, onStatus]);
+    onStatus?.(t("file.exported", { filename }));
+  }, [conversationTitle, edges, nodes, onStatus, t]);
 
   const exportOpml = useCallback(() => {
     const filename = `${safeFilePart(conversationTitle)}.opml`;
@@ -2633,8 +2942,8 @@ export function TurnMapCanvas({
     const filename = `${safeFilePart(conversationTitle)}.turnmap.svg`;
     const appearance = await loadExportAppearance();
     downloadTextFile(filename, graphToSvg(conversationTitle, nodes, edges, appearance), "image/svg+xml;charset=utf-8");
-    onStatus?.(`Exported ${filename}`);
-  }, [conversationTitle, edges, nodes, onStatus]);
+    onStatus?.(t("file.exported", { filename }));
+  }, [conversationTitle, edges, nodes, onStatus, t]);
 
   const exportPng = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.png`;
@@ -2642,14 +2951,14 @@ export function TurnMapCanvas({
       const appearance = await loadExportAppearance();
       const pngBlob = await svgToPngBlob(graphToSvg(conversationTitle, nodes, edges, appearance));
       downloadBlobFile(filename, pngBlob);
-      onStatus?.(`Exported ${filename}`);
-    } catch (error) {
-      onStatus?.(error instanceof Error ? error.message : "PNG export failed.");
+      onStatus?.(t("file.exported", { filename }));
+    } catch {
+      onStatus?.(t("file.exportPngFailed"));
     }
-  }, [conversationTitle, edges, nodes, onStatus]);
+  }, [conversationTitle, edges, nodes, onStatus, t]);
 
   const resetCurrentMap = useCallback(async () => {
-    const confirmed = window.confirm("Reset this TurnMap? This clears saved positions, edits, notes, hidden nodes, and links for the current conversation.");
+    const confirmed = window.confirm(t("file.resetConfirm"));
     if (!confirmed) return;
 
     await resetStoredGraph(conversationId);
@@ -2675,7 +2984,7 @@ export function TurnMapCanvas({
     );
     setNodes(resetNodes);
     setEdges(autoEdgesFromTurns(turns, layoutMode, false, []));
-    onStatus?.("Current map reset");
+    onStatus?.(t("file.resetDone"));
   }, [
     conversationId,
     conversationTitle,
@@ -2684,6 +2993,7 @@ export function TurnMapCanvas({
     setEdges,
     setNodes,
     summarizeNode,
+    t,
     jumpToNodeTurn,
     summarizingNodeIds,
     turns,
@@ -2697,8 +3007,8 @@ export function TurnMapCanvas({
     setUndoStack((stack) => stack.slice(0, -1));
     setRedoStack((stack) => [...stack.slice(-29), cloneSnapshot(current)]);
     restoreSnapshot(previous);
-    onStatus?.("Undo");
-  }, [currentSnapshot, onStatus, restoreSnapshot, undoStack]);
+    onStatus?.(t("file.undoDone"));
+  }, [currentSnapshot, onStatus, restoreSnapshot, t, undoStack]);
 
   const redoGraphChange = useCallback(() => {
     const next = redoStack.at(-1);
@@ -2707,8 +3017,8 @@ export function TurnMapCanvas({
     setRedoStack((stack) => stack.slice(0, -1));
     setUndoStack((stack) => [...stack.slice(-29), cloneSnapshot(current)]);
     restoreSnapshot(next);
-    onStatus?.("Redo");
-  }, [currentSnapshot, onStatus, redoStack, restoreSnapshot]);
+    onStatus?.(t("file.redoDone"));
+  }, [currentSnapshot, onStatus, redoStack, restoreSnapshot, t]);
 
   const importJson = useCallback(
     async (event: { currentTarget: HTMLInputElement }) => {
@@ -2765,7 +3075,10 @@ export function TurnMapCanvas({
                 important: Boolean(edge.important),
                 confidence: typeof edge.confidence === "number" ? edge.confidence : undefined,
                 reason: typeof edge.reason === "string" ? edge.reason : undefined,
-                createdBy: edge.createdBy === "ai" || edge.createdBy === "user" ? edge.createdBy : undefined
+                createdBy:
+                  edge.createdBy === "ai" || edge.createdBy === "user" || edge.createdBy === "topic-analysis"
+                    ? edge.createdBy
+                    : undefined
               } satisfies RelationshipEdgeData
             })
           );
@@ -2791,9 +3104,9 @@ export function TurnMapCanvas({
           nextHiddenNodeIds
         );
         void applyImportedAppearance(importedAppearance);
-        onStatus?.(`Imported TurnMap JSON: ${nextNodes.length} nodes, ${importedUserEdges.length} user links`);
-      } catch (error) {
-        onStatus?.(error instanceof Error ? error.message : "TurnMap JSON import failed.");
+        onStatus?.(t("file.importedJson", { nodes: nextNodes.length, links: importedUserEdges.length }));
+      } catch {
+        onStatus?.(t("file.importJsonFailed"));
       }
     },
     [
@@ -2804,6 +3117,7 @@ export function TurnMapCanvas({
       setEdges,
       setNodes,
       summarizeNode,
+      t,
       jumpToNodeTurn,
       summarizingNodeIds,
       turns,
@@ -2849,7 +3163,7 @@ export function TurnMapCanvas({
       if (saveAsDefault) {
         void saveDefaultLayout(nextLayoutMode);
       }
-      onStatus?.(`Layout set to ${LAYOUT_OPTIONS.find((option) => option.value === nextLayoutMode)?.label}`);
+      onStatus?.(t("app.status.layoutSet", { layout: t(LAYOUT_LABEL_KEYS[nextLayoutMode]) }));
     },
     [
       conversationTitle,
@@ -2861,6 +3175,7 @@ export function TurnMapCanvas({
       setEdges,
       setNodes,
       summarizeNode,
+      t,
       jumpToNodeTurn,
       summarizingNodeIds,
       turns,
@@ -2871,8 +3186,8 @@ export function TurnMapCanvas({
   if (turns.length === 0) {
     return (
       <section className="empty-state">
-        <h2>No map yet</h2>
-        <p>Open a supported AI conversation with at least one complete answer.</p>
+        <h2>{t("app.empty.title")}</h2>
+        <p>{t("app.empty.hint")}</p>
       </section>
     );
   }
@@ -2923,6 +3238,10 @@ export function TurnMapCanvas({
         <button className="button-with-icon" type="button" onClick={suggestLinks} disabled={suggestingLinks}>
           <Icon name="sparkles" />
           <span>{suggestingLinks ? t("toolbar.suggesting") : t("toolbar.suggestLinks")}</span>
+        </button>
+        <button className="button-with-icon" type="button" onClick={analyzeTopics} disabled={analyzingTopics}>
+          <Icon name="brain" />
+          <span>{analyzingTopics ? t("toolbar.analyzingTopics") : t("toolbar.analyzeTopics")}</span>
         </button>
         <button className="button-with-icon" type="button" onClick={() => setSearchOpen((open) => !open)}>
           <Icon name="search" />

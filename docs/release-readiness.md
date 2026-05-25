@@ -20,7 +20,7 @@ npm.cmd run package
 
 The command builds the extension, validates the generated manifest, and creates:
 
-- `<project-root>\release\turnmap-v0.1.0.zip`
+- `<project-root>\release\turnmap-v0.6.0.zip`
 - `<project-root>\release\README.txt`
 
 ## Permission Review
@@ -36,10 +36,8 @@ Required permissions:
 
 Host permissions:
 
-- `https://chatgpt.com/*`: read and navigate current ChatGPT conversations.
-- `https://chatgpt.com/backend-api/*`: fetch full conversation data when available.
-- `https://api.openai.com/*`: OpenAI-compatible AI requests.
-- `https://api.deepseek.com/*`: DeepSeek AI requests.
+- Supported AI conversation sites: read, map, and jump within the current conversation page.
+- OpenAI-compatible provider hosts: run explicit AI summaries, AI link suggestions, provider tests, and AI UI translation.
 
 Optional host permissions:
 
@@ -60,12 +58,13 @@ TurnMap converts the current ChatGPT conversation into an editable visual map. E
 Key features:
 
 - Current-conversation mind map
-- Click a node to jump back to ChatGPT
+- Click a node to jump back to the source AI conversation turn
 - Side panel, full-page mode, and floating navigator
 - Dedicated settings page
 - ChatGPT page launcher
 - Manual editing, node merge/split, note nodes, tags, and statuses
-- AI summaries and AI link suggestions with OpenAI, DeepSeek, or compatible providers
+- AI summaries and AI link suggestions with OpenAI-compatible providers
+- Local Analyze Topics for reviewable candidate links without provider embeddings
 - Export to JSON, Markdown, Obsidian Canvas, SVG, and PNG
 - Local-first storage
 

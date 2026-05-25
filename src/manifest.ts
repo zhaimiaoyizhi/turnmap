@@ -3,7 +3,7 @@
 const manifest: Manifest = {
   manifest_version: 3,
   name: "TurnMap",
-  version: "0.4.0",
+  version: "0.6.0",
   description: "Turn AI conversations into editable mind maps.",
   icons: {
     "16": "icons/turnmap-16.png",
@@ -58,7 +58,13 @@ const manifest: Manifest = {
     "https://lmarena.ai/*",
     "https://www.lmarena.ai/*",
     "https://api.openai.com/*",
-    "https://api.deepseek.com/*"
+    "https://api.deepseek.com/*",
+    "https://openrouter.ai/*",
+    "https://dashscope-intl.aliyuncs.com/*",
+    "https://api.moonshot.ai/*",
+    "https://ark.cn-beijing.volces.com/*",
+    "https://open.bigmodel.cn/*",
+    "https://api.mistral.ai/*"
   ],
   optional_host_permissions: [
     "https://*/*",

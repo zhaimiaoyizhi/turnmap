@@ -935,6 +935,65 @@ function findKnownTurn(anchor: SourceAnchor, knownTurns: Turn[]): Turn | undefin
   );
 }
 
+function findKnownUserBlockIndex(block: ConversationBlock, knownTurns: Turn[]): number | null {
+  const rawText = normalizeWebText(block.text);
+  const textHash = hashText(rawText);
+  const match = knownTurns.find((turn) => {
+    const anchor = turn.sourceAnchor;
+    if (anchor.userMessageId && block.elementId === anchor.userMessageId && textHash === anchor.userHash) return true;
+    if (textHash === anchor.userHash) return true;
+    return Boolean(anchor.userPreview && rawText.includes(anchor.userPreview));
+  });
+
+  return match?.turnIndex ?? null;
+}
+
+function getVisibleWebTurnIndexRange(
+  knownTurns: Turn[],
+  profile: WebConversationProfile
+): { first: number; last: number; count: number } | null {
+  if (knownTurns.length === 0) return null;
+
+  const indexes = extractBlocksWithFallback(profile)
+    .filter((block) => block.role === "user")
+    .map((block) => findKnownUserBlockIndex(block, knownTurns))
+    .filter((index): index is number => index !== null)
+    .sort((left, right) => left - right);
+
+  if (indexes.length === 0) return null;
+  return {
+    first: indexes[0],
+    last: indexes[indexes.length - 1],
+    count: indexes.length
+  };
+}
+
+function getWebSearchDirection(
+  anchor: SourceAnchor,
+  knownTurns: Turn[],
+  profile: WebConversationProfile,
+  scrollElement: HTMLElement
+): "up" | "down" {
+  const range = getVisibleWebTurnIndexRange(knownTurns, profile);
+
+  if (range) {
+    if (anchor.turnIndex < range.first) return "up";
+    if (anchor.turnIndex > range.last) return "down";
+
+    const midpoint = (range.first + range.last) / 2;
+    return anchor.turnIndex < midpoint ? "up" : "down";
+  }
+
+  if (knownTurns.length > 1) {
+    const maxScrollTop = Math.max(1, scrollElement.scrollHeight - scrollElement.clientHeight);
+    const scrollRatio = scrollElement.scrollTop / maxScrollTop;
+    const estimatedCurrentTurn = scrollRatio * (knownTurns.length - 1);
+    return anchor.turnIndex < estimatedCurrentTurn ? "up" : "down";
+  }
+
+  return anchor.turnIndex === 0 ? "up" : "down";
+}
+
 export function findWebTurnElement(anchor: SourceAnchor, knownTurns: Turn[], profile: WebConversationProfile): HTMLElement | null {
   const blocks = extractBlocksWithFallback(profile);
   const userBlocks = blocks.filter((block) => block.role === "user" && block.element);
@@ -1000,6 +1059,34 @@ function revealWebTurnElement(element: HTMLElement, scrollElement?: HTMLElement)
   }, 2200);
 }
 
+async function searchWebTurnInDirection(
+  anchor: SourceAnchor,
+  knownTurns: Turn[],
+  profile: WebConversationProfile,
+  scrollElement: HTMLElement,
+  direction: "up" | "down",
+  maxSteps: number
+): Promise<HTMLElement | null> {
+  for (let step = 0; step < maxSteps; step += 1) {
+    const candidate = findWebTurnElement(anchor, knownTurns, profile);
+    if (candidate) return candidate;
+
+    const currentTop = scrollElement.scrollTop;
+    const delta = Math.max(scrollElement.clientHeight * 0.75, 480);
+    const nextTop =
+      direction === "up"
+        ? Math.max(0, currentTop - delta)
+        : Math.min(scrollElement.scrollHeight, currentTop + delta);
+
+    if (Math.abs(nextTop - currentTop) < 4) break;
+
+    scrollElement.scrollTo({ top: nextTop, behavior: "instant" });
+    await delay(260);
+  }
+
+  return null;
+}
+
 export async function scrollToWebTurn(
   anchor: SourceAnchor,
   knownTurns: Turn[],
@@ -1015,26 +1102,29 @@ export async function scrollToWebTurn(
 
   for (const scrollElement of scrollCandidates) {
     const originalTop = scrollElement.scrollTop;
-    scrollElement.scrollTo({ top: 0, behavior: "instant" });
-    await delay(320);
+    const direction = getWebSearchDirection(anchor, knownTurns, profile, scrollElement);
 
-    for (let step = 0; step < 120; step += 1) {
-      const candidate = findWebTurnElement(anchor, knownTurns, profile);
-      if (candidate) {
-        revealWebTurnElement(candidate, scrollElement);
-        return { ok: true };
-      }
+    const directedCandidate = await searchWebTurnInDirection(anchor, knownTurns, profile, scrollElement, direction, 120);
+    if (directedCandidate) {
+      revealWebTurnElement(directedCandidate, scrollElement);
+      return { ok: true };
+    }
 
-      const currentTop = scrollElement.scrollTop;
-      if (currentTop + scrollElement.clientHeight >= scrollElement.scrollHeight - 4) break;
+    scrollElement.scrollTo({ top: originalTop, behavior: "instant" });
+    await delay(120);
 
-      const nextTop = Math.min(
-        currentTop + Math.max(scrollElement.clientHeight * 0.75, 480),
-        scrollElement.scrollHeight
-      );
-      if (nextTop <= currentTop + 4) break;
-      scrollElement.scrollTo({ top: nextTop, behavior: "instant" });
-      await delay(260);
+    const fallbackDirection = direction === "up" ? "down" : "up";
+    const fallbackCandidate = await searchWebTurnInDirection(
+      anchor,
+      knownTurns,
+      profile,
+      scrollElement,
+      fallbackDirection,
+      60
+    );
+    if (fallbackCandidate) {
+      revealWebTurnElement(fallbackCandidate, scrollElement);
+      return { ok: true };
     }
 
     scrollElement.scrollTo({ top: originalTop, behavior: "instant" });

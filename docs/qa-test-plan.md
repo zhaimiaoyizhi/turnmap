@@ -7,6 +7,15 @@
 - Confirm the turn count is stable after Refresh.
 - Confirm full-page mode opens the same graph.
 - Confirm search can focus an early, middle, and late node.
+- Run Analyze Topics and confirm candidates appear in the suggestion panel without changing the graph until accepted.
+- Confirm 5+ link suggestions can be reviewed with panel scrolling.
+
+## Deep Research And Folded Answers
+
+- Open a ChatGPT conversation that contains deep research or long folded answers.
+- Click the node for the folded answer and confirm TurnMap jumps to the matching source turn after lazy scrolling.
+- Click the next node after a folded answer and confirm jump direction does not first drift upward before going down.
+- Repeat with identical or near-identical user prompts and confirm TurnMap either resolves the mapped turn or reports a clear failure instead of jumping to the wrong duplicate.
 
 ## Regenerated Answers
 
@@ -54,5 +63,5 @@
 
 ## Residual Known Risk
 
-- Identical repeated user prompts can still make source matching ambiguous in some cases.
+- Identical repeated user prompts can still make source matching ambiguous when the page has not loaded enough nearby user markers to map the target turn.
 - Very large maps may need performance tuning for SVG/PNG export.

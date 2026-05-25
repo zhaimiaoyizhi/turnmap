@@ -64,3 +64,32 @@ test("buildDebugReport redacts identifiers and excludes conversation text", () =
   assert.doesNotMatch(report, /private user text/);
   assert.doesNotMatch(report, /private assistant text/);
 });
+
+test("buildDebugReport includes sanitized provider failure category only", () => {
+  const report = buildDebugReport({
+    conversationTitle: "Provider Debug",
+    conversationId: "provider-debug-id",
+    mode: "side-panel",
+    status: "Connection failed",
+    userAgent: "UnitTest/1.0",
+    extensionVersion: "0.5.0-test",
+    generatedAt: "2026-05-20T00:00:00.000Z",
+    lastMessage: null,
+    taskLog: [
+      {
+        id: "test-connection-openai",
+        kind: "test-connection",
+        status: "error",
+        progress: 100,
+        message: "invalid-api-key provider=openai host=api.openai.com model=gpt-5.4-nano",
+        createdAt: "2026-05-20T00:00:00.000Z",
+        updatedAt: "2026-05-20T00:00:01.000Z"
+      }
+    ]
+  });
+
+  assert.match(report, /invalid-api-key/);
+  assert.match(report, /host=api\.openai\.com/);
+  assert.doesNotMatch(report, /sk-/);
+  assert.doesNotMatch(report, /chat\/completions/);
+});

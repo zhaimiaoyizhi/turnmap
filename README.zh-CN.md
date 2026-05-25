@@ -28,6 +28,7 @@ TurnMap 适合：
 - **可编辑图谱**：编辑标题、摘要、标签、状态、笔记、隐藏节点和关系链接。
 - **节点外观自定义**：节点可染色、折叠、标记重要；节点染色支持渐变或底色渲染，并可调节渲染程度。
 - **链接操作**：链接颜色与类型统一，重要链接使用更强加粗效果；不同关系可以用更清晰的颜色区分。
+- **主题分析 MVP**：先在本地根据节点标题、摘要、标签和距离预分类高信号候选链接，再由用户审阅。
 - **更多外观选择**：支持日间、夜间、护眼和跟随浏览器主题，支持多种布局与显示偏好。
 - **选项卡优化**：Side Panel、Full Page、Float、页面悬浮启动器等入口被整合到更清爽的视图与设置结构中。
 - **多种视图**：Side Panel、Full Page 和 Float。
@@ -95,34 +96,42 @@ TurnMap 的设置页面用于管理全局界面偏好：
 - **语言**：跟随浏览器、英文、中文，以及由 AI 生成并保存在本地的自定义界面翻译。
 - **默认布局**：Single-side、Radial、Matrix 或 Two-sided。
 - **节点染色渲染**：可选择渐变或底色，并用滑动条调节渲染程度。
-- **AI 输出预算**：调整 `max_tokens`，适配需要更多回答预算的 provider 或推理模型。
+- **AI 输出预算**：调整 `max_tokens`；它限制输出长度，不改变模型上下文窗口。
 - **入口显示**：管理 Side Panel、Full Page、Float 和页面悬浮启动器相关偏好。
 
 ## AI 功能
 
-TurnMap 目前支持提供 OpenAI-compatible `/chat/completions` API 的服务商。
+TurnMap 支持提供 OpenAI-compatible `/chat/completions` API 的服务商。Provider 预设只是便利用默认值，优先选择较新、快速、省 token、上下文较充足的模型；如果账号、地域或平台 endpoint 要求不同，用户仍可手动修改 base URL 和 model。
 
 内置预设：
 
 - OpenAI
 - DeepSeek
-- Custom compatible endpoint
+- OpenRouter
+- Qwen / DashScope
+- Kimi / Moonshot
+- Doubao / Volcano Ark
+- Zhipu / GLM
+- Mistral
+- Gemini compatible
+- Custom OpenAI-compatible endpoint
 
 当前 AI 功能仍处于预览阶段，尚不完全稳定：
 
 - **AI 总结**：用于生成紧凑的节点标题和摘要，但不同 provider 的 JSON / 文本输出格式兼容性仍在完善。
+- **分析主题**：本地根据节点标题、摘要、标签、距离和已有链接预分类可能相关的候选链接，用户审阅后才会改变图谱。
 - **AI 建议链接**：用于在强相关节点之间建议语义链接，但需要继续优化阈值、置信度和画面整洁度。
-- **AI 翻译**：可为界面标签生成自定义语言包并保存在本地，但仍需要继续提升格式兼容性与长文本排版稳定性。
+- **AI 翻译**：用用户自己的 API key 生成本地 UI 语言包，支持导入/导出标准 JSON 语言包，缺失标签回退英文。
 
-后续版本会继续增强 AI 翻译、AI 总结、AI 建议链接、更多 provider 兼容和任务日志辅助排错。
+后续版本会继续增强本地主题分析、AI 总结、AI 建议链接、更多 provider 兼容和任务日志辅助排错。
 
-API key 保存在用户本地浏览器扩展存储中，不会提交到本仓库。
+API key 保存在用户本地浏览器扩展存储中，不会提交到本仓库。只粘贴 API key 原文，不要带 `Bearer ` 前缀。部分平台会把 model 字段当作 endpoint ID 使用，base URL 则始终是请求入口，不应混进 API key。
 
-响应格式要求详见 [AI Provider Guide](docs/ai-provider-guide.md)。
+TurnMap 为总结、推荐链接和 AI 界面翻译保留更高的任务级输出预算，同时允许用户把 `maxTokens` 配置到 12000。AI 翻译只发送 TurnMap UI 文案，若模型返回坏 JSON，可能额外调用一次 API 修复格式；生成或导入的语言包保存在本地。Provider 默认值、语言包格式、响应格式与 token 预算说明详见 [AI Provider Guide](docs/ai-provider-guide.md)。
 
 ## 隐私
 
-默认情况下，TurnMap 将对话图谱保存在浏览器扩展本地存储中。AI 功能会把选定的对话文本发送到用户配置的 provider。导出文件由用户自行控制。
+默认情况下，TurnMap 将对话图谱保存在浏览器扩展本地存储中。分析主题功能在本地运行，只使用图谱里已有的节点元数据。AI 功能会把选定的对话文本发送到用户配置的 provider。导出文件由用户自行控制。
 
 详见 [Privacy Statement](docs/privacy-statement.md)。
 
@@ -134,7 +143,7 @@ TurnMap 当前预览版请求以下必要权限：
 - `sidePanel`：提供 Edge 侧边栏界面。
 - `storage`：在本地保存图谱、设置、AI provider 配置、launcher 位置和 Float 状态。
 - `webRequest`：在可用时辅助读取 ChatGPT backend 请求，从而更可靠地提取完整当前对话。
-- 已支持 AI 对话网站、OpenAI 和 DeepSeek 的 host access。
+- 已支持 AI 对话网站和内置 AI provider API host 的 host access。
 - 自定义 OpenAI-compatible provider 使用 optional host access，仅在用户配置自定义 endpoint 时请求。
 
 详见 [Permission Review](docs/permissions-review.md)。
@@ -186,15 +195,20 @@ scripts           构建和打包辅助脚本
 - `0.1.x`：稳定预览版，重点是 AI fallback、Float / Full Page 小屏体验；读取和跳转目前较稳定，暂不重构。
 - `0.2.0`：更新提示与 ChatGPT 适配增强，包括 GitHub Release 检查、忽略版本、稍后提醒、脱敏 debug report。
 - `0.3.0`：协作与高级导出。OPML 与 Obsidian vault Markdown 已实现；XMind 作为 Anki CSV 之前的下一优先项。
-- `0.4.0`：多 AI 对话网页适配，支持 ChatGPT、Gemini、Claude.ai、DeepSeek、Kimi、豆包、Qwen、Google AI Studio、Perplexity、Grok、GLM / Z.ai / 智谱清言、Mistral Le Chat 和 Arena / LMArena。
-- `0.5.0`：更多 API Key / Provider 兼容，Custom OpenAI-compatible endpoint 保留为兜底接入方式。
-- `0.6.0`：Embedding 主题分析增强，默认不开启，只在长对话或用户手动触发时使用。
+- `0.4.0`：多 AI 对话网页适配，支持 ChatGPT、Gemini、Claude.ai、DeepSeek、Kimi、豆包、Qwen、Google AI Studio、Perplexity、Grok、GLM / Z.ai / 智谱清言、Mistral Le Chat 和 Arena / LMArena。当前计划完成后，继续处理 MiniMax Agent。
+- `0.5.0`：更多 API Key / Provider 兼容，面向 OpenAI、DeepSeek、OpenRouter、Qwen、Kimi、Doubao、Zhipu、Mistral、Gemini-compatible Vertex endpoint 和 Custom OpenAI-compatible endpoint 提供省成本、快速、上下文够用的默认预设。
+- `0.5.1`：完善 AI 界面翻译语言包，支持生成、导入/导出、坏 JSON 自动修复、本地保存和布局防溢出兜底。
+- `0.6.0`：本地主题分析 MVP，预分类高置信候选链接供用户审阅，不做 provider embeddings。
 - `0.7.0`：知识整理能力增强，包括更智能的链接、批量接受/拒绝链接、主题折叠、批量标签。
 - `0.8.0`：Chrome 兼容迁移；Firefox 后续需单独适配 sidebar_action。
 - `0.9.0`：公开 Beta，目标是 100+ 节点不卡顿，大图导出不溢出，AI 批量任务可取消。
 - `0.10.0`：商店发布准备，Edge Add-ons 首发，Chrome Web Store 后续配合 Chrome 兼容阶段。
 - `1.0.0`：稳定版，发布前必须完成隐私、权限、文档、QA、安装恢复路径。
 - `1.1.0`：实验性细化图谱，正式版发布后慢慢完成。
+
+发布说明：
+
+- [0.6.0 release notes](docs/release-notes-0.6.0.md) 专门说明相比上一次 GitHub 推送的更新内容。
 
 ## 贡献
 

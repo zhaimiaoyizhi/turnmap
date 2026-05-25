@@ -1,4 +1,4 @@
-import type { AiSettings } from "../settings/ai-settings-storage";
+import { metadataForProvider, type AiSettings } from "../settings/ai-settings-storage.ts";
 
 const DEFAULT_REQUEST_MAX_TOKENS = 1200;
 const MIN_REQUEST_MAX_TOKENS = 256;
@@ -60,8 +60,33 @@ export function stripTrailingSlash(value: string): string {
 
 function assertSettings(settings: AiSettings): void {
   if (!settings.apiKey || !settings.baseUrl || !settings.model) {
-    throw new Error("Configure AI provider, model, and API key first.");
+    throw new Error("Configure AI provider, model, and raw API key first. [category=missing-settings]");
   }
+}
+
+function hostFromBaseUrl(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return "invalid-host";
+  }
+}
+
+function chatCompletionUrl(settings: AiSettings): string {
+  const metadata = metadataForProvider(settings.provider);
+  const chatPath = metadata.chatPath.startsWith("/") ? metadata.chatPath : `/${metadata.chatPath}`;
+  return `${stripTrailingSlash(settings.baseUrl)}${chatPath}`;
+}
+
+function errorCategory(status: number, detail: string): string {
+  if (status === 401 || /invalid.*api.*key|unauthorized|incorrect api key/i.test(detail)) return "invalid-api-key";
+  if (status === 403 || /permission|forbidden|not allowed/i.test(detail)) return "permission-denied";
+  if (status === 404 || /model.*not.*found|unknown model|does not exist/i.test(detail)) return "model-not-found";
+  if (status === 429 || /rate.?limit|quota|too many/i.test(detail)) return "rate-limited";
+  if (/response_format|json_object/i.test(detail)) return "response-format-rejected";
+  if (/cors|host permission|failed to fetch/i.test(detail)) return "cors-or-host-permission";
+  if (/chat.?completions|compatible|not found/i.test(detail)) return "not-openai-compatible";
+  return "unknown";
 }
 
 function errorMessageFromPayload(payload: unknown): string | null {
@@ -294,27 +319,41 @@ export async function requestChatCompletion(
     max_tokens: maxTokens,
     messages
   };
-  if (options.jsonMode) {
+  const metadata = metadataForProvider(settings.provider);
+  const shouldSendJsonMode = Boolean(options.jsonMode && metadata.supportsJsonMode);
+  if (shouldSendJsonMode) {
     body.response_format = { type: "json_object" };
   }
 
-  const response = await fetch(`${stripTrailingSlash(settings.baseUrl)}/chat/completions`, {
+  const response = await fetch(chatCompletionUrl(settings), {
     method: "POST",
     headers: {
       authorization: `Bearer ${settings.apiKey}`,
       "content-type": "application/json"
     },
     body: JSON.stringify(body)
+  }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "Network request failed";
+    throw new Error(
+      `AI request failed [category=network-error provider=${settings.provider} host=${hostFromBaseUrl(
+        settings.baseUrl
+      )} model=${settings.model}]: ${message}`
+    );
   });
 
   const payload = await parseProviderPayload(response);
   if (!response.ok) {
     const message = errorMessageFromPayload(payload);
     const detail = message ?? compactPayload(payload);
-    if (options.jsonMode && /response_format|json_object/i.test(detail)) {
+    if (shouldSendJsonMode && /response_format|json_object/i.test(detail)) {
       return requestChatCompletion(settings, messages, { ...options, jsonMode: false });
     }
-    throw new Error(`AI request failed (${response.status} ${response.statusText || "HTTP"}): ${detail}`);
+    const category = errorCategory(response.status, detail);
+    throw new Error(
+      `AI request failed [category=${category} provider=${settings.provider} host=${hostFromBaseUrl(
+        settings.baseUrl
+      )} model=${settings.model}] (${response.status} ${response.statusText || "HTTP"}): ${detail}`
+    );
   }
 
   const content = contentFromPayload(payload);
@@ -338,7 +377,11 @@ export async function requestChatCompletion(
 
   if (content == null) {
     throw new Error(
-      `AI response did not contain readable text. Expected choices[0].message.content; received ${compactPayload(
+      `AI response did not contain readable final answer text. [category=empty-response provider=${
+        settings.provider
+      } host=${hostFromBaseUrl(settings.baseUrl)} model=${
+        settings.model
+      }] Expected choices[0].message.content; received ${compactPayload(
         payload
       )}`
     );

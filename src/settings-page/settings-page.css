@@ -16,7 +16,13 @@
   display: flex;
   gap: 16px;
   justify-content: space-between;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding-bottom: 18px;
+}
+
+.settings-page__header > div {
+  min-width: 0;
 }
 
 .settings-page__header h1 {
@@ -24,18 +30,21 @@
   font-size: 26px;
   line-height: 1.2;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-page__header p {
   color: var(--cm-text-muted);
   margin: 6px 0 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-page__grid {
   align-items: start;
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  min-width: 0;
 }
 
 .settings-section {
@@ -45,6 +54,8 @@
   box-shadow: var(--cm-shadow-soft);
   display: grid;
   gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 16px;
 }
 
@@ -57,15 +68,21 @@
 .settings-section__header {
   display: grid;
   gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-section__header strong {
   font-size: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-section__header span {
   color: var(--cm-text-muted);
   font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-section label {
@@ -84,7 +101,23 @@
   border-radius: 6px;
   color: var(--cm-text);
   font: inherit;
+  min-width: 0;
+  overflow: hidden;
   padding: 8px;
+  text-overflow: ellipsis;
+}
+
+.settings-page button {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.settings-section select {
+  white-space: nowrap;
 }
 
 .settings-section p {
@@ -119,11 +152,35 @@
   align-items: end;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 
 .settings-section__inline button {
   min-height: 39px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.settings-file-picker {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-file-picker > span:first-child {
+  color: var(--cm-text-muted);
+  font-size: 12px;
+}
+
+.settings-file-picker__name {
+  color: var(--cm-text-muted);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 560px) {

@@ -1,5 +1,7 @@
 ﻿import type { Edge, Node, XYPosition } from "@xyflow/react";
-import { isNodeColorName, type NodeColorName } from "./graph-colors";
+import type { SourceAnchor } from "../../shared/types.ts";
+import { sanitizeSourceAnchors, sourceAnchorsFromNodeData } from "./source-anchors.ts";
+import { isNodeColorName, type NodeColorName } from "./graph-colors.ts";
 
 export type LayoutMode = "single" | "radial" | "list" | "two-sided";
 type NodeStatus = "open" | "review" | "done";
@@ -8,6 +10,7 @@ type StoredNodeOverride = {
   summary?: string;
   status?: NodeStatus;
   tags?: string[];
+  sourceAnchors?: SourceAnchor[];
   color?: NodeColorName;
   collapsed?: boolean;
   important?: boolean;
@@ -25,6 +28,7 @@ type StoredGraph = {
     summary: string;
     status?: NodeStatus;
     tags?: string[];
+    sourceAnchors?: SourceAnchor[];
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
@@ -96,8 +100,20 @@ export async function loadStoredGraph(conversationId: string): Promise<StoredGra
     schemaVersion: value?.schemaVersion ?? 0,
     positions: value?.positions ?? {},
     userEdges: value?.userEdges ?? [],
-    nodeOverrides: value?.nodeOverrides ?? {},
-    customNodes: value?.customNodes ?? [],
+    nodeOverrides: Object.fromEntries(
+      Object.entries(value?.nodeOverrides ?? {}).map(([nodeId, override]) => [
+        nodeId,
+        {
+          ...override,
+          sourceAnchors: sanitizeSourceAnchors(override?.sourceAnchors)
+        }
+      ])
+    ),
+    customNodes:
+      value?.customNodes?.map((node) => ({
+        ...node,
+        sourceAnchors: sanitizeSourceAnchors(node.sourceAnchors)
+      })) ?? [],
     hiddenNodeIds: value?.hiddenNodeIds ?? [],
     layoutMode: value?.layoutMode,
     hiddenRoot: value?.hiddenRoot ?? false,
@@ -133,6 +149,7 @@ export async function saveStoredGraph(
               : undefined,
         status: nodeStatus(node.data?.status),
         tags: Array.isArray(node.data?.tags) ? node.data.tags.filter((tag) => typeof tag === "string") : undefined,
+        sourceAnchors: sourceAnchorsFromNodeData(node.data ?? {}),
         color: isNodeColorName(node.data?.color) ? node.data.color : undefined,
         collapsed: typeof node.data?.collapsed === "boolean" ? node.data.collapsed : undefined,
         important: typeof node.data?.important === "boolean" ? node.data.important : undefined
@@ -148,6 +165,7 @@ export async function saveStoredGraph(
       summary: typeof node.data?.summary === "string" ? node.data.summary : "",
       status: nodeStatus(node.data?.status),
       tags: Array.isArray(node.data?.tags) ? node.data.tags.filter((tag) => typeof tag === "string") : undefined,
+      sourceAnchors: sourceAnchorsFromNodeData(node.data ?? {}),
       color: isNodeColorName(node.data?.color) ? node.data.color : undefined,
       collapsed: typeof node.data?.collapsed === "boolean" ? node.data.collapsed : undefined,
       important: typeof node.data?.important === "boolean" ? node.data.important : undefined

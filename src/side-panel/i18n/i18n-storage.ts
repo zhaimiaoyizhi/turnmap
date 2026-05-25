@@ -1,5 +1,6 @@
-import { requestChatCompletion } from "../ai/openai-compatible";
-import { loadAiSettings } from "../settings/ai-settings-storage";
+import { requestChatCompletion } from "../ai/openai-compatible.ts";
+import { extractJsonObject } from "../ai/json-output.ts";
+import { loadAiSettings } from "../settings/ai-settings-storage.ts";
 
 export type BuiltInLanguage = "en" | "zh";
 export type LanguageMode = "browser" | BuiltInLanguage | `custom:${string}`;
@@ -8,13 +9,49 @@ export type CustomLanguage = {
   id: string;
   label: string;
   languageName: string;
+  languageCode: string;
+  schemaVersion: 1;
+  sourceLocale: "en";
   translations: Record<string, string>;
   createdAt: string;
+  author?: string;
+  source?: string;
+  version?: string;
+};
+
+export type LanguagePack = {
+  schemaVersion: 1;
+  app: "TurnMap";
+  languageCode: string;
+  languageName: string;
+  sourceLocale: "en";
+  translations: Record<string, string>;
+  createdAt: string;
+  author?: string;
+  source?: string;
+  version?: string;
+};
+
+export type LanguagePackValidationResult = {
+  ok: boolean;
+  pack: LanguagePack;
+  errors: string[];
+  missingKeys: I18nKey[];
+  placeholderMismatches: I18nKey[];
+};
+
+export type LanguagePackImportResult = {
+  language: CustomLanguage;
+  validation: LanguagePackValidationResult;
+  conflict: boolean;
 };
 
 export const LANGUAGE_STORAGE_KEY = "turnmap.interface.language";
 export const CUSTOM_LANGUAGES_STORAGE_KEY = "turnmap.interface.customLanguages";
 export const DEFAULT_LANGUAGE: LanguageMode = "browser";
+const LANGUAGE_PACK_SCHEMA_VERSION = 1;
+const LANGUAGE_PACK_APP = "TurnMap";
+const LANGUAGE_PACK_SOURCE_LOCALE = "en";
 
 export const BUILT_IN_LANGUAGE_OPTIONS: Array<{ value: LanguageMode; label: string }> = [
   { value: "browser", label: "Follow browser" },
@@ -23,9 +60,13 @@ export const BUILT_IN_LANGUAGE_OPTIONS: Array<{ value: LanguageMode; label: stri
 ];
 
 export const EN_TRANSLATIONS = {
+  "app.documentTitle": "TurnMap",
+  "app.documentTitle.fullPage": "TurnMap Full Page",
   "app.kicker": "Conversation mind map",
   "app.subtitle.hasTurns": "Click a node to jump back to the source turn.",
   "app.subtitle.noTurns": "No complete turns found yet.",
+  "app.empty.title": "No map yet",
+  "app.empty.hint": "Open a supported AI conversation with at least one complete answer.",
   "app.action.refresh": "Refresh",
   "app.action.rebuild": "Rebuild",
   "app.action.deepScan": "Deep Scan",
@@ -54,6 +95,7 @@ export const EN_TRANSLATIONS = {
   "app.status.floatEnabled": "Floating panel enabled",
   "app.status.floatDisabled": "Floating panel disabled",
   "app.status.floatFailed": "Could not reach the conversation tab for floating panel.",
+  "app.status.layoutSet": "Layout set to {layout}",
   "debug.conversation": "Conversation",
   "debug.site": "Site",
   "debug.id": "ID",
@@ -63,11 +105,14 @@ export const EN_TRANSLATIONS = {
   "debug.scroll": "Scroll",
   "debug.apiTasks": "API tasks",
   "debug.exportReport": "Export Report",
+  "debug.exportReportDone": "Exported {filename}",
   "debug.exportTaskLog": "Export Task Log",
   "debug.exportTaskLogDone": "Exported {filename}",
   "toolbar.layout": "Layout",
   "toolbar.suggestLinks": "Suggest Links",
   "toolbar.suggesting": "Suggesting...",
+  "toolbar.analyzeTopics": "Analyze Topics",
+  "toolbar.analyzingTopics": "Analyzing...",
   "toolbar.search": "Search",
   "toolbar.undo": "Undo",
   "toolbar.redo": "Redo",
@@ -85,16 +130,30 @@ export const EN_TRANSLATIONS = {
   "file.copyMd": "Copy MD",
   "file.resetMap": "Reset Map",
   "file.exported": "Exported {filename}",
+  "file.importedJson": "Imported TurnMap JSON: {nodes} nodes, {links} user links.",
+  "file.importJsonFailed": "TurnMap JSON import failed.",
+  "file.markdownCopied": "Markdown copied to clipboard.",
+  "file.markdownCopyFailed": "Clipboard copy failed. Try Markdown export instead.",
+  "file.exportPngFailed": "PNG export failed.",
+  "file.resetConfirm": "Reset this TurnMap? This clears saved positions, edits, notes, hidden nodes, and links for the current conversation.",
+  "file.resetDone": "Current map reset.",
+  "file.undoDone": "Undo.",
+  "file.redoDone": "Redo.",
   "search.title": "Search Map",
   "search.close": "Close",
   "search.placeholder": "Search title, summary, tag...",
   "search.empty": "No matching nodes.",
-  "suggestions.title": "AI Link Suggestions",
+  "suggestions.title": "Link Suggestions",
   "suggestions.acceptAll": "Accept All",
   "suggestions.accept": "Accept",
   "suggestions.reject": "Reject",
   "suggestions.clear": "Clear",
+  "suggestions.acceptedStatus": "Accepted link: {source} -> {target}.",
+  "suggestions.acceptedAllStatus": "Accepted {count} link suggestions.",
+  "suggestions.rejectedStatus": "Rejected link suggestion.",
+  "suggestions.clearedStatus": "Cleared {count} link suggestions.",
   "settings.title": "TurnMap Settings",
+  "settings.documentTitle": "TurnMap Settings",
   "settings.subtitle": "Manage global settings without crowding the map workspace.",
   "settings.close": "Close",
   "settings.status.local": "Settings are stored locally in this browser profile.",
@@ -163,16 +222,26 @@ export const EN_TRANSLATIONS = {
   "status.nodesNormal": "Selected nodes unmarked important.",
   "task.summarizeOne": "Summarizing turn {current}... 5%",
   "task.summarizeOneDone": "Turn {current} summarized. 100%",
+  "task.summarizeNote": "Summarizing #AI note from {count} source turns... 5%",
+  "task.summarizeNoteDone": "#AI note summarized. 100%",
   "task.summarizeAll": "Summarizing {total} turns... 0%",
   "task.summarizeProgress": "AI task progress: {current}/{total}",
   "task.summarizeAllDone": "Batch summary finished: {total} turns updated. 100%",
   "task.summarizeFailed": "AI summary failed.",
+  "task.summarizeSkippedEdited": "Skipped AI summary because title and summary were already edited.",
+  "task.summarizeNoteNeedsSource": "#AI note needs at least one source turn before it can be summarized.",
   "task.autoSummarize": "Auto summarizing {total} default nodes... 0%",
   "task.autoSummarizeDone": "Auto summarize finished: {total} nodes updated. 100%",
   "task.autoSummarizeFailed": "Auto summarize failed.",
   "task.suggestLinks": "Asking AI to suggest semantic links... 15%",
+  "task.suggestLinksRequesting": "Waiting for AI link suggestions... 45%",
+  "task.suggestLinksFiltering": "Filtering link suggestions... 85%",
   "task.suggestLinksDone": "{count} AI link suggestions ready for review. 100%",
   "task.suggestLinksFailed": "AI link suggestion failed.",
+  "task.analyzeTopics": "Analyzing local topic signals... 20%",
+  "task.analyzeTopicsDone": "{count} topic link candidates ready for review. 100%",
+  "task.analyzeTopicsNone": "No strong topic link candidates found. 100%",
+  "task.analyzeTopicsFailed": "Topic analysis failed.",
   "task.translate": "Translating TurnMap UI to {language}... 10%",
   "task.translateDone": "Translation generated for {language}. 100%",
   "settings.theme": "Theme",
@@ -187,10 +256,19 @@ export const EN_TRANSLATIONS = {
   "settings.languageHint": "Built-in Chinese and English follow the browser by default.",
   "settings.customLanguage": "Custom language",
   "settings.customLanguagePlaceholder": "Spanish, Japanese, German...",
+  "settings.languageCode": "Language code",
+  "settings.languageCodePlaceholder": "fr-FR, ja-JP, de-DE...",
   "settings.generateTranslation": "Generate with AI",
   "settings.generatingTranslation": "Generating...",
+  "settings.importLanguagePack": "Import language pack",
+  "settings.exportLanguagePack": "Export language pack",
+  "settings.languagePackChooseFile": "Choose file",
+  "settings.languagePackNoFile": "No file selected",
+  "settings.languagePackSelected": "Selected: {filename}",
   "settings.customTranslationHint":
     "AI translation only sends TurnMap UI labels, not your conversation content. Generated labels are stored locally.",
+  "settings.translationRepairHint":
+    "If the model returns invalid JSON, TurnMap may make one extra API call to repair the language pack format.",
   "settings.enableFloat": "Enable Float navigator by default",
   "settings.showLauncher": "Show TurnMap launcher on supported AI pages",
   "settings.nodeColorRendering": "Node color rendering",
@@ -205,24 +283,51 @@ export const EN_TRANSLATIONS = {
   "settings.showUpdates": "Show update notices when available",
   "settings.includePrerelease": "Include pre-release versions",
   "settings.ignoredVersion": "Ignored version",
+  "settings.ignoredVersionPlaceholder": "v0.1.1",
   "settings.updateHint":
     "GitHub/unpacked installs cannot be silently updated by the extension. Update notices will point users to a release page or package when this feature is connected.",
   "settings.saveUpdates": "Save Updates",
   "settings.loadingUpdates": "Loading update settings...",
   "settings.translationSaved": "Generated translation saved.",
   "settings.translationNeedsName": "Enter a target language name first.",
+  "settings.translationNeedsCode": "Enter a language code first.",
   "settings.translationFailed": "AI translation failed.",
+  "settings.languageImportDone": "Imported {language}. Missing labels fall back to English: {count}.",
+  "settings.languageImportFailed": "Language pack import failed.",
+  "settings.languageImportConflict": "A custom language with the same code already exists. Replace it?",
+  "settings.languageImportCancelled": "Language pack import cancelled.",
+  "settings.languageExportNeedsCustom": "Select a custom language before exporting.",
+  "settings.languageExportDone": "Exported {language} language pack.",
   "ai.title": "AI Provider",
   "ai.subtitle": "OpenAI-compatible chat completions",
   "ai.provider": "Provider",
   "ai.customCompatible": "Custom compatible",
   "ai.baseUrl": "Base URL",
+  "ai.baseUrlPlaceholder": "https://api.example.com/v1",
   "ai.model": "Model",
+  "ai.modelPlaceholder": "model-name",
   "ai.apiKey": "API Key",
   "ai.apiKeyPlaceholder": "Stored locally",
+  "ai.apiKeyRawHint":
+    "Paste the raw API key only. Do not include the Bearer prefix; TurnMap adds the Authorization header for you.",
   "ai.maxTokens": "Max output tokens",
+  "ai.maxTokensPlaceholder": "1200",
   "ai.maxTokensHint":
-    "Increase this if reasoning models return empty answers because thinking used the whole output budget.",
+    "This is the output limit, not the model context window. Increase it if summaries, translations, or link suggestions return empty answers.",
+  "ai.providerPresetLimit":
+    "Provider presets are convenience defaults. Accounts, regions, model names, JSON mode, and context windows can vary by provider.",
+  "ai.providerNote.openai": "Default: gpt-5.4-nano for fast, lower-cost long-context OpenAI-compatible work.",
+  "ai.providerNote.deepseek": "Default: deepseek-v4-flash. Older deepseek-chat settings remain usable but are not the fresh default.",
+  "ai.providerNote.openrouter": "Default: qwen/qwen3.5-flash-02-23 through OpenRouter's normalized API.",
+  "ai.providerNote.qwen": "Default: qwen3.5-flash through DashScope compatible mode.",
+  "ai.providerNote.kimi": "Default: kimi-k2.6. JSON mode is not forced for this preset.",
+  "ai.providerNote.doubao":
+    "Default: Doubao Ark compatible endpoint. Some Volcano Ark accounts use an endpoint ID in the Model field.",
+  "ai.providerNote.zhipu": "Default: glm-4.7-flash through BigModel chat completions.",
+  "ai.providerNote.mistral": "Default: mistral-small-2603 with structured chat completion support.",
+  "ai.providerNote.geminiCompatible":
+    "Gemini compatible requires a Vertex project/location endpoint and an OAuth Bearer token, not a normal static API key.",
+  "ai.providerNote.custom": "Custom remains the fallback for any OpenAI-compatible chat completions endpoint.",
   "ai.privacy":
     "API keys are saved in this browser's extension storage. TurnMap sends conversation text only when you run AI features or enable auto summarize.",
   "ai.autoSummarize": "Auto summarize new/default nodes",
@@ -242,9 +347,13 @@ export type I18nKey = keyof typeof EN_TRANSLATIONS;
 export type TranslationMap = Record<I18nKey, string>;
 
 export const ZH_TRANSLATIONS: TranslationMap = {
+  "app.documentTitle": "TurnMap",
+  "app.documentTitle.fullPage": "TurnMap 全屏页",
   "app.kicker": "对话思维导图",
   "app.subtitle.hasTurns": "点击节点即可跳回来源轮次。",
   "app.subtitle.noTurns": "还没有找到完整问答轮次。",
+  "app.empty.title": "还没有地图",
+  "app.empty.hint": "请打开一个至少包含一条完整回答的受支持 AI 对话。",
   "app.action.refresh": "刷新",
   "app.action.rebuild": "重建",
   "app.action.deepScan": "深度扫描",
@@ -273,6 +382,7 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "app.status.floatEnabled": "浮窗已启用",
   "app.status.floatDisabled": "浮窗已关闭",
   "app.status.floatFailed": "无法连接到对话标签页以显示浮窗。",
+  "app.status.layoutSet": "布局已切换为 {layout}",
   "debug.conversation": "对话",
   "debug.site": "站点",
   "debug.id": "ID",
@@ -282,11 +392,14 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "debug.scroll": "滚动",
   "debug.apiTasks": "API 任务",
   "debug.exportReport": "导出报告",
+  "debug.exportReportDone": "已导出 {filename}",
   "debug.exportTaskLog": "导出任务日志",
   "debug.exportTaskLogDone": "已导出 {filename}",
   "toolbar.layout": "布局",
   "toolbar.suggestLinks": "建议链接",
   "toolbar.suggesting": "建议中...",
+  "toolbar.analyzeTopics": "分析主题",
+  "toolbar.analyzingTopics": "分析中...",
   "toolbar.search": "搜索",
   "toolbar.undo": "撤销",
   "toolbar.redo": "重做",
@@ -304,16 +417,30 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "file.copyMd": "复制 MD",
   "file.resetMap": "重置导图",
   "file.exported": "已导出 {filename}",
+  "file.importedJson": "已导入 TurnMap JSON：{nodes} 个节点，{links} 条用户链接。",
+  "file.importJsonFailed": "TurnMap JSON 导入失败。",
+  "file.markdownCopied": "Markdown 已复制到剪贴板。",
+  "file.markdownCopyFailed": "剪贴板复制失败，请改用 Markdown 导出。",
+  "file.exportPngFailed": "PNG 导出失败。",
+  "file.resetConfirm": "重置当前 TurnMap？这会清除当前对话已保存的位置、编辑、备注、隐藏节点和链接。",
+  "file.resetDone": "当前导图已重置。",
+  "file.undoDone": "已撤销。",
+  "file.redoDone": "已重做。",
   "search.title": "搜索导图",
   "search.close": "关闭",
   "search.placeholder": "搜索标题、摘要、标签...",
   "search.empty": "没有匹配的节点。",
-  "suggestions.title": "AI 链接建议",
+  "suggestions.title": "链接建议",
   "suggestions.acceptAll": "全部接受",
   "suggestions.accept": "接受",
   "suggestions.reject": "拒绝",
   "suggestions.clear": "清空",
+  "suggestions.acceptedStatus": "已接受链接：{source} -> {target}。",
+  "suggestions.acceptedAllStatus": "已接受 {count} 条链接建议。",
+  "suggestions.rejectedStatus": "已拒绝链接建议。",
+  "suggestions.clearedStatus": "已清空 {count} 条链接建议。",
   "settings.title": "TurnMap 设置",
+  "settings.documentTitle": "TurnMap 设置",
   "settings.subtitle": "管理全局设置，让地图工作区保持清爽。",
   "settings.close": "关闭",
   "settings.status.local": "设置会保存在当前浏览器配置文件中。",
@@ -382,16 +509,26 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "status.nodesNormal": "已取消所选节点的重要标记。",
   "task.summarizeOne": "正在总结第 {current} 轮... 5%",
   "task.summarizeOneDone": "第 {current} 轮已总结。100%",
+  "task.summarizeNote": "正在根据 {count} 个来源轮次总结 #AI 备注... 5%",
+  "task.summarizeNoteDone": "#AI 备注已总结。100%",
   "task.summarizeAll": "正在总结 {total} 个轮次... 0%",
   "task.summarizeProgress": "AI 任务进度: {current}/{total}",
   "task.summarizeAllDone": "批量总结完成: 已更新 {total} 个轮次。100%",
   "task.summarizeFailed": "AI 总结失败。",
+  "task.summarizeSkippedEdited": "已跳过 AI 总结，因为标题和摘要都已被手动编辑。",
+  "task.summarizeNoteNeedsSource": "#AI 备注至少需要一个来源轮次后才能执行总结。",
   "task.autoSummarize": "正在自动总结 {total} 个默认节点... 0%",
   "task.autoSummarizeDone": "自动总结完成: 已更新 {total} 个节点。100%",
   "task.autoSummarizeFailed": "自动总结失败。",
   "task.suggestLinks": "正在请求 AI 建议语义链接... 15%",
+  "task.suggestLinksRequesting": "正在等待 AI 链接建议... 45%",
+  "task.suggestLinksFiltering": "正在筛选链接建议... 85%",
   "task.suggestLinksDone": "已有 {count} 条 AI 链接建议可供审阅。100%",
   "task.suggestLinksFailed": "AI 链接建议失败。",
+  "task.analyzeTopics": "正在分析本地主题信号... 20%",
+  "task.analyzeTopicsDone": "已有 {count} 条主题链接候选可供审阅。100%",
+  "task.analyzeTopicsNone": "没有找到足够强的主题链接候选。100%",
+  "task.analyzeTopicsFailed": "主题分析失败。",
   "task.translate": "正在将 TurnMap 界面翻译为 {language}... 10%",
   "task.translateDone": "已生成 {language} 翻译。100%",
   "settings.theme": "主题",
@@ -406,9 +543,17 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "settings.languageHint": "内置中文和英文，默认跟随浏览器语言。",
   "settings.customLanguage": "自定义语言",
   "settings.customLanguagePlaceholder": "西班牙语、日语、德语...",
+  "settings.languageCode": "语言代码",
+  "settings.languageCodePlaceholder": "fr-FR、ja-JP、de-DE...",
   "settings.generateTranslation": "用 AI 生成",
   "settings.generatingTranslation": "生成中...",
+  "settings.importLanguagePack": "导入语言包",
+  "settings.exportLanguagePack": "导出语言包",
+  "settings.languagePackChooseFile": "选择文件",
+  "settings.languagePackNoFile": "未选择文件",
+  "settings.languagePackSelected": "已选择：{filename}",
   "settings.customTranslationHint": "AI 翻译只会发送 TurnMap 界面文案，不会发送你的对话内容。生成后的文案会保存在本地。",
+  "settings.translationRepairHint": "如果模型返回的 JSON 格式不合法，TurnMap 可能额外调用一次 API 来修复语言包格式。",
   "settings.enableFloat": "默认启用浮窗导航",
   "settings.showLauncher": "在受支持 AI 页面显示 TurnMap 悬浮按钮",
   "settings.nodeColorRendering": "节点染色渲染",
@@ -423,22 +568,45 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "settings.showUpdates": "有更新时显示提示",
   "settings.includePrerelease": "包含预发布版本",
   "settings.ignoredVersion": "忽略的版本",
+  "settings.ignoredVersionPlaceholder": "v0.1.1",
   "settings.updateHint": "GitHub/解压安装无法由扩展静默更新。该功能接通后，更新提示会指向发布页或安装包。",
   "settings.saveUpdates": "保存更新设置",
   "settings.loadingUpdates": "正在加载更新设置...",
   "settings.translationSaved": "翻译已生成并保存。",
   "settings.translationNeedsName": "请先输入目标语言名称。",
+  "settings.translationNeedsCode": "请先输入语言代码。",
   "settings.translationFailed": "AI 翻译失败。",
+  "settings.languageImportDone": "已导入 {language}。缺失标签会回退英文：{count}。",
+  "settings.languageImportFailed": "语言包导入失败。",
+  "settings.languageImportConflict": "已有相同代码的自定义语言。是否替换？",
+  "settings.languageImportCancelled": "已取消导入语言包。",
+  "settings.languageExportNeedsCustom": "请先选择一个自定义语言再导出。",
+  "settings.languageExportDone": "已导出 {language} 语言包。",
   "ai.title": "AI 服务",
   "ai.subtitle": "OpenAI 兼容的 Chat Completions",
   "ai.provider": "服务商",
   "ai.customCompatible": "自定义兼容接口",
   "ai.baseUrl": "Base URL",
+  "ai.baseUrlPlaceholder": "https://api.example.com/v1",
   "ai.model": "模型",
+  "ai.modelPlaceholder": "model-name",
   "ai.apiKey": "API Key",
   "ai.apiKeyPlaceholder": "保存在本地",
+  "ai.apiKeyRawHint": "只粘贴 API Key 原文，不要包含 Bearer 前缀；TurnMap 会自动生成 Authorization 请求头。",
   "ai.maxTokens": "最大输出 tokens",
-  "ai.maxTokensHint": "如果推理模型因为思考占满输出预算而返回空内容，请调高这个值。",
+  "ai.maxTokensPlaceholder": "1200",
+  "ai.maxTokensHint": "这是输出上限，不是模型上下文窗口。如果总结、翻译或推荐链接返回空内容，请调高这个值。",
+  "ai.providerPresetLimit": "Provider 预设只是便利默认值；账号、地域、模型名、JSON mode 和上下文窗口可能随服务商变化。",
+  "ai.providerNote.openai": "默认使用 gpt-5.4-nano，适合快速、低成本、长上下文的 OpenAI-compatible 任务。",
+  "ai.providerNote.deepseek": "默认使用 deepseek-v4-flash。旧的 deepseek-chat 配置仍可保留，但不再作为新默认值。",
+  "ai.providerNote.openrouter": "默认通过 OpenRouter 标准化接口使用 qwen/qwen3.5-flash-02-23。",
+  "ai.providerNote.qwen": "默认通过 DashScope compatible mode 使用 qwen3.5-flash。",
+  "ai.providerNote.kimi": "默认使用 kimi-k2.6。此预设不会强制发送 JSON mode。",
+  "ai.providerNote.doubao": "默认使用豆包方舟兼容入口。部分 Volcano Ark 账号需要在 Model 字段填写 endpoint ID。",
+  "ai.providerNote.zhipu": "默认通过 BigModel chat completions 使用 glm-4.7-flash。",
+  "ai.providerNote.mistral": "默认使用 mistral-small-2603，并支持结构化 Chat Completions。",
+  "ai.providerNote.geminiCompatible": "Gemini compatible 需要 Vertex 项目/地域 endpoint 和 OAuth Bearer token，不是普通静态 API Key。",
+  "ai.providerNote.custom": "Custom 继续作为任意 OpenAI-compatible chat completions endpoint 的兜底。",
   "ai.privacy": "API Key 会保存在浏览器扩展存储中。只有在你运行 AI 功能或启用自动总结时，TurnMap 才会发送对话文本。",
   "ai.autoSummarize": "自动总结新的默认节点",
   "ai.status.local": "设置保存在本地。AI 功能会把选中的对话文本发送给你配置的 provider。",
@@ -466,6 +634,193 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function languageCodePrimarySubtag(languageCode: string): string {
+  return languageCode.trim().toLowerCase().split("-")[0] ?? "";
+}
+
+function isBuiltInLanguageCode(languageCode: string): boolean {
+  const primary = languageCodePrimarySubtag(languageCode);
+  return primary === "en" || primary === "zh";
+}
+
+function isValidLanguageCode(languageCode: string): boolean {
+  return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(languageCode.trim());
+}
+
+function extractPlaceholders(text: string): string[] {
+  return [...new Set([...text.matchAll(/\{[a-zA-Z0-9_]+\}/g)].map((match) => match[0]))].sort();
+}
+
+export function placeholderMismatch(source: string, translated: string): boolean {
+  const sourcePlaceholders = extractPlaceholders(source);
+  const translatedPlaceholders = extractPlaceholders(translated);
+  return (
+    sourcePlaceholders.length !== translatedPlaceholders.length ||
+    sourcePlaceholders.some((placeholder, index) => placeholder !== translatedPlaceholders[index])
+  );
+}
+
+export function missingKeys(translations: Record<string, string>): I18nKey[] {
+  return (Object.keys(EN_TRANSLATIONS) as I18nKey[]).filter((key) => !translations[key]?.trim());
+}
+
+function normalizedTranslations(value: unknown): Record<string, string> {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    (Object.keys(EN_TRANSLATIONS) as I18nKey[])
+      .map((key) => [key, typeof value[key] === "string" ? value[key].trim() : ""] as const)
+      .filter(([, translated]) => translated)
+  );
+}
+
+function defaultLanguagePack(input: unknown): LanguagePack {
+  const record = isRecord(input) ? input : {};
+  return {
+    schemaVersion: LANGUAGE_PACK_SCHEMA_VERSION,
+    app: LANGUAGE_PACK_APP,
+    languageCode: optionalString(record.languageCode) ?? "",
+    languageName: optionalString(record.languageName) ?? optionalString(record.label) ?? "",
+    sourceLocale: LANGUAGE_PACK_SOURCE_LOCALE,
+    translations: normalizedTranslations(record.translations),
+    createdAt: optionalString(record.createdAt) ?? new Date().toISOString(),
+    author: optionalString(record.author),
+    source: optionalString(record.source),
+    version: optionalString(record.version)
+  };
+}
+
+function unwrapLanguagePack(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  if (isRecord(value.languagePack)) return value.languagePack;
+  if (isRecord(value.pack)) return value.pack;
+  if (isRecord(value.data)) return value.data;
+  return value;
+}
+
+export function validateLanguagePack(value: unknown): LanguagePackValidationResult {
+  const raw = unwrapLanguagePack(value);
+  const record = isRecord(raw) ? raw : {};
+  const errors: string[] = [];
+
+  if (record.schemaVersion !== LANGUAGE_PACK_SCHEMA_VERSION) {
+    errors.push("Language pack schemaVersion must be 1.");
+  }
+  if (record.app !== LANGUAGE_PACK_APP) {
+    errors.push("Language pack app must be TurnMap.");
+  }
+  if (record.sourceLocale !== LANGUAGE_PACK_SOURCE_LOCALE) {
+    errors.push("Language pack sourceLocale must be en.");
+  }
+  if (!optionalString(record.languageName)) {
+    errors.push("Language pack languageName is required.");
+  }
+  const languageCode = optionalString(record.languageCode) ?? "";
+  if (!languageCode) {
+    errors.push("Language pack languageCode is required.");
+  } else if (!isValidLanguageCode(languageCode)) {
+    errors.push("Language pack languageCode must be a BCP-47 style code.");
+  } else if (isBuiltInLanguageCode(languageCode)) {
+    errors.push("Language pack cannot override a built-in language.");
+  }
+  if (!isRecord(record.translations)) {
+    errors.push("Language pack translations must be an object.");
+  }
+
+  const pack = defaultLanguagePack(record);
+  const placeholderMismatches = (Object.keys(pack.translations) as I18nKey[]).filter(
+    (key) => key in EN_TRANSLATIONS && placeholderMismatch(EN_TRANSLATIONS[key], pack.translations[key])
+  );
+  if (placeholderMismatches.length > 0) {
+    errors.push(`Translations must preserve placeholders: ${placeholderMismatches.join(", ")}`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    pack,
+    errors,
+    missingKeys: missingKeys(pack.translations),
+    placeholderMismatches
+  };
+}
+
+export function exportLanguagePack(language: CustomLanguage): LanguagePack {
+  return {
+    schemaVersion: LANGUAGE_PACK_SCHEMA_VERSION,
+    app: LANGUAGE_PACK_APP,
+    languageCode: language.languageCode,
+    languageName: language.languageName,
+    sourceLocale: LANGUAGE_PACK_SOURCE_LOCALE,
+    translations: normalizedTranslations(language.translations),
+    createdAt: language.createdAt,
+    author: language.author,
+    source: language.source,
+    version: language.version
+  };
+}
+
+function languageFromPack(pack: LanguagePack): CustomLanguage {
+  const id = customLanguageId(pack.languageName, pack.languageCode);
+  return {
+    id,
+    label: pack.languageName,
+    languageName: pack.languageName,
+    languageCode: pack.languageCode,
+    schemaVersion: LANGUAGE_PACK_SCHEMA_VERSION,
+    sourceLocale: LANGUAGE_PACK_SOURCE_LOCALE,
+    translations: pack.translations,
+    createdAt: pack.createdAt,
+    author: pack.author,
+    source: pack.source,
+    version: pack.version
+  };
+}
+
+export function importLanguagePack(value: unknown, existingLanguages: CustomLanguage[] = []): LanguagePackImportResult {
+  const validation = validateLanguagePack(value);
+  if (!validation.ok) {
+    throw new Error(`Language pack is invalid: ${validation.errors.join(" ")}`);
+  }
+  const language = languageFromPack(validation.pack);
+  const conflict = existingLanguages.some(
+    (existing) =>
+      existing.id === language.id ||
+      existing.languageCode.trim().toLowerCase() === language.languageCode.trim().toLowerCase()
+  );
+  return { language, validation, conflict };
+}
+
+function languagePackFromGeneratedPayload(value: unknown, languageName: string, languageCode: string): unknown {
+  const unwrapped = unwrapLanguagePack(value);
+  if (isRecord(unwrapped) && isRecord(unwrapped.translations)) {
+    return unwrapped;
+  }
+  if (isRecord(unwrapped) && Object.keys(unwrapped).some((key) => key in EN_TRANSLATIONS)) {
+    return {
+      schemaVersion: LANGUAGE_PACK_SCHEMA_VERSION,
+      app: LANGUAGE_PACK_APP,
+      languageCode,
+      languageName,
+      sourceLocale: LANGUAGE_PACK_SOURCE_LOCALE,
+      createdAt: new Date().toISOString(),
+      translations: unwrapped
+    };
+  }
+  return unwrapped;
+}
+
+function parseLanguagePackFromText(content: string, languageName: string, languageCode: string): LanguagePack {
+  const parsed = extractJsonObject(content);
+  const validation = validateLanguagePack(languagePackFromGeneratedPayload(parsed, languageName, languageCode));
+  if (!validation.ok) {
+    throw new Error(`Language pack is invalid: ${validation.errors.join(" ")}`);
+  }
+  return validation.pack;
+}
+
 export function normalizeLanguageMode(value: unknown): LanguageMode {
   if (value === "browser" || value === "en" || value === "zh") return value;
   if (typeof value === "string" && value.startsWith("custom:")) return value as `custom:${string}`;
@@ -477,8 +832,8 @@ export function browserLanguage(): BuiltInLanguage {
   return languages.some((language) => language.toLowerCase().startsWith("zh")) ? "zh" : "en";
 }
 
-export function customLanguageId(languageName: string): string {
-  const base = languageName
+export function customLanguageId(languageName: string, languageCode?: string): string {
+  const base = (languageCode || languageName)
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
@@ -495,12 +850,23 @@ function normalizeCustomLanguages(value: unknown): CustomLanguage[] {
       id: typeof item.id === "string" ? item.id : "",
       label: typeof item.label === "string" ? item.label : "",
       languageName: typeof item.languageName === "string" ? item.languageName : "",
+      languageCode:
+        typeof item.languageCode === "string" && item.languageCode.trim()
+          ? item.languageCode
+          : typeof item.id === "string"
+            ? item.id
+            : "",
+      schemaVersion: LANGUAGE_PACK_SCHEMA_VERSION as 1,
+      sourceLocale: LANGUAGE_PACK_SOURCE_LOCALE as "en",
       translations: isRecord(item.translations)
         ? Object.fromEntries(
             Object.entries(item.translations).filter((entry): entry is [string, string] => typeof entry[1] === "string")
           )
         : {},
-      createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString()
+      createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString(),
+      author: optionalString(item.author),
+      source: optionalString(item.source),
+      version: optionalString(item.version)
     }))
     .filter((item) => item.id && item.label);
 }
@@ -540,26 +906,11 @@ export function formatTranslation(template: string, values?: Record<string, stri
   return template.replace(/\{(\w+)\}/g, (match, key) => String(values[key] ?? match));
 }
 
-function parseTranslationJson(content: string): Record<string, string> {
-  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
-  const raw = (fenced ?? content).trim();
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("Model did not return a JSON object.");
-  const parsed = JSON.parse(raw.slice(start, end + 1));
-  if (!isRecord(parsed)) throw new Error("Model translation payload was not an object.");
-
-  return Object.fromEntries(
-    Object.keys(EN_TRANSLATIONS).map((key) => {
-      const translated = parsed[key];
-      return [key, typeof translated === "string" && translated.trim() ? translated.trim() : EN_TRANSLATIONS[key as I18nKey]];
-    })
-  );
-}
-
-export async function generateCustomLanguage(languageName: string): Promise<CustomLanguage> {
-  const trimmedLanguageName = languageName.trim();
-  if (!trimmedLanguageName) throw new Error("Target language is required.");
+async function repairGeneratedLanguagePack(
+  rawContent: string,
+  languageName: string,
+  languageCode: string
+): Promise<LanguagePack> {
   const settings = await loadAiSettings();
   const content = await requestChatCompletion(
     settings,
@@ -567,27 +918,72 @@ export async function generateCustomLanguage(languageName: string): Promise<Cust
       {
         role: "system",
         content:
-          "You translate browser extension UI labels. Return only one JSON object. Keep placeholders such as {count}, {steps}, and {source} unchanged. Keep product names like TurnMap and ChatGPT unchanged. Prefer concise labels that fit buttons and menus."
+          "Repair this TurnMap UI translation into one valid JSON language pack. Return only JSON. Preserve placeholders like {count}, {current}, {total}, {steps}, {source}, and keep TurnMap product names unchanged."
       },
       {
         role: "user",
         content: JSON.stringify({
+          targetSchema: {
+            schemaVersion: 1,
+            app: "TurnMap",
+            languageCode,
+            languageName,
+            sourceLocale: "en",
+            createdAt: "ISO timestamp",
+            translations: "object whose keys are TurnMap UI translation keys and whose values are short translated strings"
+          },
+          sourceLanguage: "English",
+          targetLanguage: languageName,
+          languageCode,
+          labels: EN_TRANSLATIONS,
+          invalidModelResponse: rawContent
+        })
+      }
+    ],
+    { temperature: 0, maxTokens: 6000, jsonMode: true }
+  );
+  return parseLanguagePackFromText(content, languageName, languageCode);
+}
+
+export async function generateCustomLanguage(languageName: string, languageCode: string): Promise<CustomLanguage> {
+  const trimmedLanguageName = languageName.trim();
+  const trimmedLanguageCode = languageCode.trim();
+  if (!trimmedLanguageName) throw new Error("Target language is required.");
+  if (!trimmedLanguageCode) throw new Error("Target language code is required.");
+  const settings = await loadAiSettings();
+  const content = await requestChatCompletion(
+    settings,
+    [
+      {
+        role: "system",
+        content:
+          "You translate browser extension UI labels. Return only one valid JSON language pack object. Keep placeholders such as {count}, {current}, {total}, {steps}, and {source} unchanged. Keep product names like TurnMap and ChatGPT unchanged. Prefer concise labels that fit buttons, tabs, menus, and graph nodes."
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          expectedSchema: {
+            schemaVersion: 1,
+            app: "TurnMap",
+            languageCode: trimmedLanguageCode,
+            languageName: trimmedLanguageName,
+            sourceLocale: "en",
+            createdAt: "ISO timestamp",
+            translations: "object with every TurnMap UI key translated from labels"
+          },
           targetLanguage: trimmedLanguageName,
+          languageCode: trimmedLanguageCode,
           sourceLanguage: "English",
           labels: EN_TRANSLATIONS
         })
       }
     ],
-    { temperature: 0.1, maxTokens: 5000, jsonMode: true }
+    { temperature: 0.1, maxTokens: 6000, jsonMode: true }
   );
 
-  const translations = parseTranslationJson(content);
-  const id = customLanguageId(trimmedLanguageName);
-  return {
-    id,
-    label: trimmedLanguageName,
-    languageName: trimmedLanguageName,
-    translations,
-    createdAt: new Date().toISOString()
-  };
+  try {
+    return languageFromPack(parseLanguagePackFromText(content, trimmedLanguageName, trimmedLanguageCode));
+  } catch {
+    return languageFromPack(await repairGeneratedLanguagePack(content, trimmedLanguageName, trimmedLanguageCode));
+  }
 }

@@ -777,6 +777,7 @@ textarea:focus-visible {
   box-shadow: var(--cm-shadow);
   display: grid;
   gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
   max-height: min(520px, calc(100% - 92px));
   overflow: hidden;
   padding: 12px;
@@ -850,7 +851,8 @@ textarea:focus-visible {
 .suggestion-list {
   display: grid;
   gap: 8px;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .suggestion-item {

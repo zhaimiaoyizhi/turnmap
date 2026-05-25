@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { testAiConnection } from "../ai/openai-compatible";
+import type { I18nKey } from "../i18n/i18n-storage";
 import { useI18n } from "../i18n/useI18n";
 import { recordApiTaskLog } from "../task-log";
 import {
   MAX_MAX_TOKENS,
   MIN_MAX_TOKENS,
+  aiProviderOptions,
   defaultsForProvider,
   loadAiSettings,
+  metadataForProvider,
   normalizeMaxTokens,
   saveAiSettings,
   type AiProvider,
@@ -18,11 +21,20 @@ type AiSettingsFormProps = {
   onSaved?: (message: string) => void;
 };
 
+function hostFromBaseUrl(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return "missing-host";
+  }
+}
+
 export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<AiSettings>(defaultsForProvider("openai"));
   const [status, setStatus] = useState("");
   const [testing, setTesting] = useState(false);
+  const providerMetadata = metadataForProvider(settings.provider);
 
   useEffect(() => {
     void loadAiSettings().then(setSettings);
@@ -35,8 +47,9 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
   const updateProvider = useCallback((provider: AiProvider) => {
     setSettings((current) => ({
       ...defaultsForProvider(provider),
-      apiKey: current.apiKey,
+      apiKey: "",
       maxTokens: current.maxTokens,
+      autoSummarize: current.autoSummarize,
       provider
     }));
   }, []);
@@ -57,6 +70,7 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
   const testConnection = useCallback(async () => {
     setTesting(true);
     const taskId = `test-connection-${settings.provider}-${Date.now()}`;
+    const host = hostFromBaseUrl(settings.baseUrl);
     const testingMessage = t("ai.status.testing");
     setStatus(testingMessage);
     void recordApiTaskLog({
@@ -77,7 +91,7 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
         id: taskId,
         kind: "test-connection",
         status: "success",
-        message,
+        message: `${message} provider=${settings.provider} host=${host} model=${settings.model}`,
         progress: 100
       });
     } catch (error) {
@@ -108,18 +122,26 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
           value={settings.provider}
           onChange={(event) => updateProvider(event.currentTarget.value as AiProvider)}
         >
-          <option value="openai">OpenAI</option>
-          <option value="deepseek">DeepSeek</option>
-          <option value="custom">{t("ai.customCompatible")}</option>
+          {aiProviderOptions.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.label}
+            </option>
+          ))}
         </select>
       </label>
+
+      <p>
+        {t(providerMetadata.providerNoteKey as I18nKey)}
+        <br />
+        {t("ai.providerPresetLimit")}
+      </p>
 
       <label>
         {t("ai.baseUrl")}
         <input
           value={settings.baseUrl}
           onChange={(event) => updateField("baseUrl", event.currentTarget.value)}
-          placeholder="https://api.example.com/v1"
+          placeholder={t("ai.baseUrlPlaceholder")}
         />
       </label>
 
@@ -128,7 +150,7 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
         <input
           value={settings.model}
           onChange={(event) => updateField("model", event.currentTarget.value)}
-          placeholder="model-name"
+          placeholder={t("ai.modelPlaceholder")}
         />
       </label>
 
@@ -141,6 +163,7 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
           placeholder={t("ai.apiKeyPlaceholder")}
         />
       </label>
+      <p>{t("ai.apiKeyRawHint")}</p>
 
       <label>
         {t("ai.maxTokens")}
@@ -151,7 +174,7 @@ export function AiSettingsForm({ compact = false, onSaved }: AiSettingsFormProps
           step={128}
           value={settings.maxTokens}
           onChange={(event) => updateField("maxTokens", normalizeMaxTokens(event.currentTarget.value))}
-          placeholder="1200"
+          placeholder={t("ai.maxTokensPlaceholder")}
         />
       </label>
 

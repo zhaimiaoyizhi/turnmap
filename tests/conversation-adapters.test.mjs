@@ -585,12 +585,45 @@ test("web jump lookup does not trust repeated generic DOM ids before text matchi
 
 test("web jump reveals turns with direct container centering and stable highlight", () => {
   const source = readFileSync(new URL("../src/content/web-adapter-core.ts", import.meta.url), "utf8");
+  const jumpStart = source.indexOf("export async function scrollToWebTurn");
+  const jumpBody = source.slice(jumpStart);
 
   assert.match(source, /WEB_HIGHLIGHT_CLASS = "turnmap-source-highlight"/);
   assert.match(source, /function scrollElementToCenter\(element: HTMLElement, scrollElement: HTMLElement\)/);
   assert.match(source, /function revealWebTurnElement\(element: HTMLElement, scrollElement\?: HTMLElement\)/);
+  assert.match(source, /function getWebSearchDirection/);
+  assert.match(source, /function searchWebTurnInDirection/);
   assert.match(source, /element\.classList\.add\(WEB_HIGHLIGHT_CLASS\)/);
+  assert.match(jumpBody, /const originalTop = scrollElement\.scrollTop;/);
+  assert.match(jumpBody, /const direction = getWebSearchDirection/);
+  assert.match(jumpBody, /scrollElement\.scrollTo\(\{ top: originalTop, behavior: "instant" \}\);/);
+  assert.doesNotMatch(jumpBody, /scrollElement\.scrollTo\(\{ top: 0, behavior: "instant" \}\);/);
   assert.doesNotMatch(source, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
+});
+
+test("ChatGPT jump direction can use visible user-only markers before scroll-ratio fallback", () => {
+  const source = readFileSync(new URL("../src/content/turn-extractor.ts", import.meta.url), "utf8");
+  const rangeStart = source.indexOf("export function getVisibleTurnIndexRange");
+  const range = source.slice(rangeStart);
+  const lookupStart = source.indexOf("export function findTurnElement");
+  const lookupEnd = source.indexOf("export function getVisibleTurnIndexRange", lookupStart);
+  const lookup = source.slice(lookupStart, lookupEnd);
+  const markerPickerStart = source.indexOf("function pickBestUserMarker");
+  const markerPickerEnd = source.indexOf("function pickBestCandidate", markerPickerStart);
+  const markerPicker = source.slice(markerPickerStart, markerPickerEnd);
+
+  assert.match(source, /type UserTurnMarker/);
+  assert.match(source, /function getUserTurnMarkers/);
+  assert.match(source, /function getMarkerGlobalIndex/);
+  assert.match(source, /function pickBestUserMarker/);
+  assert.match(markerPicker, /if \(knownTurns\.length > 0\) return null;/);
+  assert.match(markerPicker, /return markers\.length === 1 \? markers\[0\] : null;/);
+  assert.ok(markerPicker.indexOf("if (knownTurns.length > 0) return null;") < markerPicker.indexOf("return markers.length === 1 ? markers[0] : null;"));
+  assert.match(range, /const userMarkers = getUserTurnMarkers\(\);/);
+  assert.match(range, /new Set\(\[\.\.\.completeIndexes, \.\.\.markerIndexes\]\)/);
+  assert.doesNotMatch(range, /completeIndexes\.length > 0 \? completeIndexes : markerIndexes/);
+  assert.match(lookup, /const userMarkerMatch = pickBestUserMarker/);
+  assert.match(lookup, /markerMatchesAnchor\(marker, anchor\)/);
 });
 
 test("Perplexity profile declares its own scroll and content boundaries", () => {

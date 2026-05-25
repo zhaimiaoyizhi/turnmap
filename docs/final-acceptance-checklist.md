@@ -2,13 +2,13 @@
 
 Use this checklist before handing a build to testers.
 
-Latest QA record: `docs/qa-run-2026-05-12.md`.
+Latest QA record: `docs/qa-run-2026-05-25.md`.
 
 ## Build And Package
 
 - [x] `npm.cmd run typecheck` passes.
 - [x] `npm.cmd run build` passes.
-- [x] `npm.cmd run package` creates `release/turnmap-v0.1.0.zip`.
+- [x] `npm.cmd run package` creates `release/turnmap-v0.6.0.zip`.
 - [x] `dist/manifest.json` contains the expected permissions and host permissions.
 
 ## Edge Loading
@@ -27,6 +27,7 @@ Latest QA record: `docs/qa-run-2026-05-12.md`.
 - [x] Clicking a recent node jumps to the matching ChatGPT turn.
 - [x] Clicking an older node jumps after deep-scan extraction.
 - [x] Clicking several different nodes does not produce repeated upward drift.
+- [x] Clicking nodes around deep-research-style folded replies can fall back to mapped user-message anchors instead of failing while the answer is still collapsed.
 - [x] Jump failures show a visible status instead of silently doing nothing.
 
 ## Graph Editing
@@ -51,6 +52,8 @@ Latest QA record: `docs/qa-run-2026-05-12.md`.
 - [x] Custom compatible endpoint requests host permission when needed.
 - [x] AI summary does not overwrite a user-edited summary without user action.
 - [x] AI link suggestions can be accepted, rejected, edited, and cleared.
+- [x] Local Analyze Topics produces reviewable candidate links without sending text to an AI provider.
+- [x] Long candidate lists remain scrollable in the link suggestion panel.
 
 ## Import And Export
 
