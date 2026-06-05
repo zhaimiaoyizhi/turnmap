@@ -1092,6 +1092,28 @@ test("root node context menu is swallowed before jump eligibility checks", () =>
   assert.ok(handler.indexOf("event.stopPropagation()") < handler.indexOf("!nodeData.turn"));
 });
 
+test("floating panel uses right-click jump and follows saved theme", () => {
+  const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
+  const renderStart = source.indexOf("function renderFloatingPanel");
+  const renderEnd = source.indexOf("function clampFloatingPosition", renderStart);
+  const renderBody = source.slice(renderStart, renderEnd);
+  const messageStart = source.indexOf('if (message.type === "TURNMAP_JUMP_TO_TURN")');
+  const messageEnd = source.indexOf('if (message.type === "TURNMAP_SET_FLOATING_PANEL")', messageStart);
+  const messageBody = source.slice(messageStart, messageEnd);
+
+  assert.match(source, /function themeStorageKey\(\): string \{\s*return "turnmap\.interface\.theme";\s*\}/);
+  assert.match(source, /function applyFloatingTheme/);
+  assert.match(source, /data-turnmap-theme/);
+  assert.match(source, /themeStorageKey\(\) in changes/);
+  assert.match(source, /prefers-color-scheme: dark/);
+
+  assert.match(renderBody, /addEventListener\("click", \(event\) => \{\s*event\.preventDefault\(\);\s*button\.focus\(\);/s);
+  assert.match(renderBody, /addEventListener\("contextmenu", \(event\) => \{/);
+  assert.match(renderBody, /performJumpToTurn\(\{ type: "TURNMAP_JUMP_TO_TURN", anchor: turn\.sourceAnchor \}\)/);
+  assert.doesNotMatch(renderBody, /getCurrentAdapter\(\)\?\.jumpToTurn/);
+  assert.match(messageBody, /performJumpToTurn\(message as JumpToTurnMessage\)/);
+});
+
 test("blocksToTurns pairs ordinary web AI user and assistant blocks", () => {
   const turns = blocksToTurns([
     { role: "user", text: "Explain adapters", elementId: "u1" },

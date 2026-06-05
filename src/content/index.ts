@@ -7,6 +7,7 @@ declare global {
     __chatMapContentStarted?: boolean;
     __chatMapContentMessageListenerStarted?: boolean;
     __chatMapContentStorageListenerStarted?: boolean;
+    __chatMapContentThemeMediaListenerStarted?: boolean;
   }
 }
 
@@ -53,6 +54,9 @@ let floatingCollapsed = false;
 let floatingTurns: Turn[] = [];
 let floatingDragCleanup: (() => void) | null = null;
 let launcherMovedDuringPointer = false;
+let floatingThemeSetting: FloatingThemeMode = "browser";
+
+type FloatingThemeMode = "browser" | "day" | "night" | "eye-care";
 
 type FloatingPosition = {
   left: number;
@@ -65,6 +69,10 @@ function floatingPanelEnabledKey(): string {
 
 function floatingPanelPositionKey(): string {
   return "turnmap.floatingPanel.position";
+}
+
+function themeStorageKey(): string {
+  return "turnmap.interface.theme";
 }
 
 function launcherEnabledKey(): string {
@@ -85,6 +93,37 @@ function removeFloatingPanel(): void {
 function removeLauncher(): void {
   launcherButton?.remove();
   launcherButton = null;
+}
+
+function normalizeFloatingTheme(value: unknown): FloatingThemeMode {
+  return value === "browser" || value === "day" || value === "night" || value === "eye-care" ? value : "browser";
+}
+
+function resolveFloatingTheme(theme: FloatingThemeMode): Exclude<FloatingThemeMode, "browser"> {
+  if (theme !== "browser") return theme;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "night" : "day";
+}
+
+function applyFloatingTheme(theme: FloatingThemeMode = floatingThemeSetting): void {
+  floatingThemeSetting = normalizeFloatingTheme(theme);
+  if (!floatingPanel) return;
+  floatingPanel.dataset.turnmapTheme = resolveFloatingTheme(floatingThemeSetting);
+  floatingPanel.dataset.turnmapThemeSetting = floatingThemeSetting;
+}
+
+function loadFloatingTheme(): void {
+  void chrome.storage.local.get(themeStorageKey()).then((result) => {
+    applyFloatingTheme(normalizeFloatingTheme(result[themeStorageKey()]));
+  });
+}
+
+function performJumpToTurn(message: JumpToTurnMessage): Promise<unknown> {
+  const adapter = getCurrentAdapter();
+  if (!adapter) {
+    return Promise.resolve({ ok: false, reason: "This AI conversation site is not supported yet." });
+  }
+
+  return adapter.jumpToTurn(message.anchor);
 }
 
 function previewText(text: string): string {
@@ -131,9 +170,16 @@ function renderFloatingPanel(): void {
     const button = document.createElement("button");
     button.type = "button";
     button.innerHTML = `<span>Turn ${turn.turnIndex + 1}</span><strong></strong>`;
+    button.title = "Right-click to jump to the original turn.";
     button.querySelector("strong")!.textContent = previewText(turn.userText);
-    button.addEventListener("click", () => {
-      void getCurrentAdapter()?.jumpToTurn(turn.sourceAnchor);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      button.focus();
+    });
+    button.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void performJumpToTurn({ type: "TURNMAP_JUMP_TO_TURN", anchor: turn.sourceAnchor });
     });
     list.append(button);
   });
@@ -256,12 +302,21 @@ function ensureFloatingPanel(): void {
   style.id = "turnmap-floating-style";
   style.textContent = `
     .turnmap-floating-panel {
-      background: rgba(255, 255, 255, 0.96);
-      border: 1px solid #d7e3ec;
+      --turnmap-float-bg: rgba(255, 255, 255, 0.96);
+      --turnmap-float-surface: #ffffff;
+      --turnmap-float-surface-soft: #f7fbff;
+      --turnmap-float-border: #d7e3ec;
+      --turnmap-float-border-strong: #a9c3d4;
+      --turnmap-float-text: #102033;
+      --turnmap-float-muted: #708397;
+      --turnmap-float-note: #5c6f82;
+      --turnmap-float-shadow: rgba(20, 68, 105, 0.14);
+      background: var(--turnmap-float-bg);
+      border: 1px solid var(--turnmap-float-border);
       border-radius: 8px;
       bottom: 92px;
-      box-shadow: 0 18px 42px rgba(20, 68, 105, 0.14);
-      color: #102033;
+      box-shadow: 0 18px 42px var(--turnmap-float-shadow);
+      color: var(--turnmap-float-text);
       display: grid;
       font: 12px Inter, ui-sans-serif, system-ui, sans-serif;
       gap: 8px;
@@ -274,6 +329,28 @@ function ensureFloatingPanel(): void {
       right: 18px;
       width: min(320px, calc(100vw - 36px));
       z-index: 2147483600;
+    }
+    .turnmap-floating-panel[data-turnmap-theme="night"] {
+      --turnmap-float-bg: rgba(15, 23, 34, 0.96);
+      --turnmap-float-surface: #162232;
+      --turnmap-float-surface-soft: #101a27;
+      --turnmap-float-border: #314457;
+      --turnmap-float-border-strong: #4d6b84;
+      --turnmap-float-text: #e6eef7;
+      --turnmap-float-muted: #9fb2c5;
+      --turnmap-float-note: #b7c7d7;
+      --turnmap-float-shadow: rgba(0, 0, 0, 0.34);
+    }
+    .turnmap-floating-panel[data-turnmap-theme="eye-care"] {
+      --turnmap-float-bg: rgba(255, 255, 250, 0.96);
+      --turnmap-float-surface: #fffef5;
+      --turnmap-float-surface-soft: #f4faea;
+      --turnmap-float-border: #d8e4c6;
+      --turnmap-float-border-strong: #a9bf8e;
+      --turnmap-float-text: #25311e;
+      --turnmap-float-muted: #68795a;
+      --turnmap-float-note: #5f704f;
+      --turnmap-float-shadow: rgba(73, 96, 52, 0.16);
     }
     .turnmap-floating-header {
       align-items: center;
@@ -290,10 +367,10 @@ function ensureFloatingPanel(): void {
       gap: 6px;
     }
     .turnmap-floating-panel button {
-      background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
-      border: 1px solid #a9c3d4;
+      background: linear-gradient(180deg, var(--turnmap-float-surface) 0%, var(--turnmap-float-surface-soft) 100%);
+      border: 1px solid var(--turnmap-float-border-strong);
       border-radius: 6px;
-      color: #102033;
+      color: var(--turnmap-float-text);
       cursor: pointer;
       font: inherit;
       padding: 5px 8px;
@@ -324,20 +401,20 @@ function ensureFloatingPanel(): void {
       width: 100%;
     }
     .turnmap-floating-list span {
-      color: #708397;
+      color: var(--turnmap-float-muted);
       font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
     }
     .turnmap-floating-list strong {
-      color: #102033;
+      color: var(--turnmap-float-text);
       font-size: 12px;
       line-height: 1.35;
       overflow-wrap: anywhere;
       white-space: normal;
     }
     .turnmap-floating-list p {
-      color: #5c6f82;
+      color: var(--turnmap-float-note);
       margin: 0;
     }
   `;
@@ -346,6 +423,8 @@ function ensureFloatingPanel(): void {
   floatingPanel = document.createElement("aside");
   floatingPanel.className = "turnmap-floating-panel";
   document.body.append(floatingPanel);
+  applyFloatingTheme();
+  loadFloatingTheme();
   renderFloatingPanel();
   loadFloatingPosition();
 }
@@ -575,6 +654,17 @@ function startTurnMapContentStorageListener(): void {
     if (floatingPanelEnabledKey() in changes) {
       setFloatingPanel(Boolean(changes[floatingPanelEnabledKey()].newValue), false);
     }
+    if (themeStorageKey() in changes) {
+      applyFloatingTheme(normalizeFloatingTheme(changes[themeStorageKey()].newValue));
+    }
+  });
+}
+
+function startTurnMapContentThemeMediaListener(): void {
+  if (window.__chatMapContentThemeMediaListenerStarted) return;
+  window.__chatMapContentThemeMediaListenerStarted = true;
+  window.matchMedia?.("(prefers-color-scheme: dark)")?.addEventListener?.("change", () => {
+    if (floatingThemeSetting === "browser") applyFloatingTheme("browser");
   });
 }
 
@@ -615,14 +705,7 @@ function startTurnMapContentMessageListener(): void {
     }
 
     if (message.type === "TURNMAP_JUMP_TO_TURN") {
-      const adapter = getCurrentAdapter();
-      if (!adapter) {
-        sendResponse({ ok: false, reason: "This AI conversation site is not supported yet." });
-        return true;
-      }
-
-      adapter
-        .jumpToTurn((message as JumpToTurnMessage).anchor)
+      performJumpToTurn(message as JumpToTurnMessage)
         .then(sendResponse)
         .catch(() =>
           sendResponse({ ok: false, reason: "The original conversation turn could not be found." })
@@ -649,4 +732,5 @@ if (!window.__chatMapContentStarted || launcherNeedsRepair) {
 
 startTurnMapContentObservers();
 startTurnMapContentStorageListener();
+startTurnMapContentThemeMediaListener();
 startTurnMapContentMessageListener();
