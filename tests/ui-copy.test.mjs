@@ -18,8 +18,9 @@ test("empty map copy is site-neutral for multi-site adapters", async () => {
 
 test("TurnMap JSON and visual exports preserve appearance settings", async () => {
   const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+  const turnNodeSource = await readFile(new URL("../src/side-panel/graph/TurnNode.tsx", import.meta.url), "utf8");
 
-  assert.match(canvasSource, /schemaVersion:\s*2/);
+  assert.match(canvasSource, /schemaVersion:\s*4/);
   assert.match(canvasSource, /appearance/);
   assert.match(canvasSource, /loadExportAppearance/);
   assert.match(canvasSource, /normalizeImportedAppearance/);
@@ -28,6 +29,14 @@ test("TurnMap JSON and visual exports preserve appearance settings", async () =>
   assert.match(canvasSource, /nodeColorRendering/);
   assert.match(canvasSource, /node\.data\.collapsed/);
   assert.match(canvasSource, /node\.data\.important/);
+  assert.match(canvasSource, /function renderMiniMapSvg/);
+  assert.match(canvasSource, /calculateMiniMapLayout\(expansion\)/);
+  assert.match(canvasSource, /mini-link/);
+  assert.match(canvasSource, /mini-text/);
+  assert.match(canvasSource, /isSummary && summaryTargets\.has\(link\.target\)/);
+  assert.match(canvasSource, /targetEdge - direction \* Math\.min\(16, Math\.max\(8, gap \/ 2\)\)/);
+  assert.match(turnNodeSource, /isSummary && summaryTargets\.has\(link\.target\)/);
+  assert.match(turnNodeSource, /targetEdge - direction \* Math\.min\(16, Math\.max\(8, gap \/ 2\)\)/);
 });
 
 test("rebuild action is localized and resets saved graph before regenerating", async () => {
@@ -88,6 +97,17 @@ test("interface titles, hints, placeholders, and panel chrome are localized", as
   ]) {
     assert.match(i18nSource, new RegExp(`"${key}":`));
   }
+});
+
+test("theme and language defaults follow the browser", async () => {
+  const themeSource = await readFile(new URL("../src/side-panel/settings/theme-storage.ts", import.meta.url), "utf8");
+  const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+  const settingsSource = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
+
+  assert.match(themeSource, /DEFAULT_THEME:\s*ThemeMode\s*=\s*"browser"/);
+  assert.match(i18nSource, /DEFAULT_LANGUAGE:\s*LanguageMode\s*=\s*"browser"/);
+  assert.match(settingsSource, /settings\.theme\.browser/);
+  assert.match(settingsSource, /settings\.language\.browser/);
 });
 
 test("system-adjacent file and status messages are localized", async () => {
@@ -162,6 +182,108 @@ test("link suggestion review panel keeps overflow candidates scrollable", async 
   assert.match(i18nSource, /"suggestions\.title": "Link Suggestions"/);
   assert.match(i18nSource, /"suggestions\.title": "链接建议"/);
   assert.doesNotMatch(i18nSource, /"suggestions\.title": "AI Link Suggestions"/);
+});
+
+test("edge weight and graph health copy are localized", async () => {
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+  const taskLogSource = await readFile(new URL("../src/side-panel/task-log.ts", import.meta.url), "utf8");
+  const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  for (const key of ["action.edgeWeight", "task.graphHealthDone"]) {
+    assert.match(i18nSource, new RegExp(`"${key}":`));
+    assert.match(canvasSource, new RegExp(key.replaceAll(".", "\\.")));
+  }
+
+  assert.match(canvasSource, /type="range"/);
+  assert.match(canvasSource, /updateSelectedEdges\(\{ weight:/);
+  assert.match(canvasSource, /updateSelectedEdge\(\{ weight:/);
+  assert.match(canvasSource, /healthyGraphSnapshot/);
+  assert.match(taskLogSource, /"graph-health"/);
+});
+
+test("link connection style setting is localized and defaults to curved edges", async () => {
+  const settingsSource = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
+  const uiSettingsSource = await readFile(new URL("../src/side-panel/settings/ui-settings-storage.ts", import.meta.url), "utf8");
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+  const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  for (const key of [
+    "settings.linkConnectionStyle",
+    "settings.linkConnectionStyleCurved",
+    "settings.linkConnectionStyleAngled"
+  ]) {
+    assert.match(i18nSource, new RegExp(`"${key}":`));
+    assert.match(settingsSource, new RegExp(key.replaceAll(".", "\\.")));
+  }
+
+  assert.match(uiSettingsSource, /LinkConnectionStyle = "curved" \| "angled"/);
+  assert.match(uiSettingsSource, /normalizeLinkConnectionStyle\(value: unknown\): LinkConnectionStyle/);
+  assert.match(uiSettingsSource, /value === "angled" \? "angled" : "curved"/);
+  assert.match(canvasSource, /edgeTypeForLinkConnectionStyle/);
+  assert.match(canvasSource, /style === "angled" \? "smoothstep" : "default"/);
+  assert.match(canvasSource, /loadUiSettings\(\)/);
+  assert.match(canvasSource, /activeConnectionStyle = uiSettings\.linkConnectionStyle/);
+  assert.match(canvasSource, /applyEdgeStyle\(edge, activeConnectionStyle\)/);
+  assert.match(canvasSource, /applyEdgeStyle\([^;]+linkConnectionStyle\)/s);
+  assert.match(canvasSource, /setEdges\(\(currentEdges\) => currentEdges\.map\(\(edge\) => applyEdgeStyle\(edge, style\)\)\)/);
+});
+
+test("collapsed node action writes compact automatic dimensions", async () => {
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+
+  assert.match(canvasSource, /function originalContentDimensions/);
+  assert.match(canvasSource, /function compactCollapsedDimensions/);
+  assert.match(canvasSource, /function expandedContentDimensions/);
+  assert.match(canvasSource, /function withContentFittingDimensions/);
+  assert.match(canvasSource, /updateNodeExpansion\(nodeId, \(expansion\) => updateMiniNode/);
+  assert.match(canvasSource, /withContentFittingDimensions\(node,\s*\{\s*[\s\S]*collapsed: shouldCollapse/);
+  assert.match(canvasSource, /withContentFittingDimensions\(node,\s*\{\s*[\s\S]*displayMode/);
+  assert.match(canvasSource, /collapsed: shouldCollapse/);
+  assert.match(canvasSource, /dimensions/);
+});
+
+test("debug panel and running task status use compact multi-row layout", async () => {
+  const appSource = await readFile(new URL("../src/side-panel/App.tsx", import.meta.url), "utf8");
+  const stylesSource = await readFile(new URL("../src/side-panel/styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /const runningTasks = useMemo/);
+  assert.match(appSource, /\.filter\(\(entry\) => entry\.status === "running"\)/);
+  assert.match(appSource, /\.slice\(0, 3\)/);
+  assert.match(appSource, /status-bar--stacked/);
+  assert.match(appSource, /debug-panel__grid/);
+  assert.match(appSource, /debug-panel__actions/);
+
+  assert.match(stylesSource, /\.status-bar--stacked/);
+  assert.match(stylesSource, /\.status-bar__tasks/);
+  assert.match(stylesSource, /\.status-bar__task/);
+  assert.match(stylesSource, /\.debug-panel__grid/);
+  assert.match(stylesSource, /\.debug-panel__item/);
+  assert.match(stylesSource, /\.debug-panel__actions/);
+});
+
+test("node resize edge hit areas do not enlarge corner handles", async () => {
+  const stylesSource = await readFile(new URL("../src/side-panel/styles.css", import.meta.url), "utf8");
+
+  assert.match(
+    stylesSource,
+    /\.turn-node \.react-flow__resize-control\.line\.left,\s*\.turn-node \.react-flow__resize-control\.line\.right\s*\{\s*width:\s*14px;/s
+  );
+  assert.match(
+    stylesSource,
+    /\.turn-node \.react-flow__resize-control\.line\.bottom\s*\{\s*height:\s*22px;/s
+  );
+  assert.match(
+    stylesSource,
+    /\.turn-node \.react-flow__resize-control\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*opacity:\s*0;/s
+  );
+  assert.match(
+    stylesSource,
+    /\.turn-node \.react-flow__resize-control\.handle\s*\{[^}]*height:\s*5px;[^}]*width:\s*5px;/s
+  );
+  assert.doesNotMatch(stylesSource, /\.turn-node:hover \.react-flow__resize-control/);
+  assert.doesNotMatch(stylesSource, /\.turn-node\.is-selected \.react-flow__resize-control/);
+  assert.doesNotMatch(stylesSource, /\.turn-node \.react-flow__resize-control\.left,\s*\.turn-node \.react-flow__resize-control\.right/s);
+  assert.doesNotMatch(stylesSource, /\.turn-node \.react-flow__resize-control\.bottom\s*\{\s*(?:bottom|height):/s);
 });
 
 test("link suggestion progress and review actions are visible in the status bar", async () => {

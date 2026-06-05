@@ -32,9 +32,9 @@ export type AiProviderMetadata = {
 };
 
 const SETTINGS_KEY = "turnmap.aiSettings";
-export const DEFAULT_MAX_TOKENS = 1200;
+export const DEFAULT_MAX_TOKENS = 4000;
 export const MIN_MAX_TOKENS = 256;
-export const MAX_MAX_TOKENS = 12000;
+export const MAX_MAX_TOKENS = 24000;
 
 export const AI_PROVIDER_METADATA: Record<AiProvider, AiProviderMetadata> = {
   openai: {

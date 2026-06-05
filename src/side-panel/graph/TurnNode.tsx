@@ -1,5 +1,10 @@
 import { useState, type CSSProperties, type MouseEvent } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
+import {
+  calculateMiniMapLayout,
+  type AnswerExpansion,
+  type AnswerMiniNode
+} from "../ai/answer-expansion";
 import type { SourceAnchor, Turn } from "../../shared/types.ts";
 import { useI18n } from "../i18n/useI18n";
 import { colorValue, type NodeColorName } from "./graph-colors";
@@ -20,7 +25,18 @@ export function TurnNode({ id, data, selected }: NodeProps) {
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
+    dimensions?: { width: number; height: number; manual: boolean };
+    answerExpansion?: AnswerExpansion;
     onUpdate?: (nodeId: string, updates: { title?: string; summary?: string }) => void;
+    onResize?: (nodeId: string, dimensions: { width: number; height: number; manual: boolean }) => void;
+    onMiniNodeUpdate?: (
+      nodeId: string,
+      miniNodeId: string,
+      updates: Partial<Pick<AnswerMiniNode, "title" | "color" | "important">>
+    ) => void;
+    onMiniNodeDelete?: (nodeId: string, miniNodeId: string) => void;
+    onMiniNodeSelect?: (nodeId: string, miniNodeId: string) => void;
+    selectedMiniNodeId?: string;
     onSummarize?: (nodeId: string) => void;
     onJump?: (nodeId: string) => void;
     isSummarizing?: boolean;
@@ -65,6 +81,20 @@ export function TurnNode({ id, data, selected }: NodeProps) {
           : undefined
       }
     >
+      <NodeResizer
+        minWidth={nodeData.answerExpansion?.displayMode === "expanded" ? 520 : 240}
+        minHeight={nodeData.answerExpansion?.displayMode === "expanded" ? 320 : 120}
+        maxWidth={2200}
+        maxHeight={3200}
+        isVisible
+        onResizeEnd={(_, params) =>
+          nodeData.onResize?.(id, {
+            width: Math.round(params.width),
+            height: Math.round(params.height),
+            manual: true
+          })
+        }
+      />
       <Handle type="target" position={Position.Top} />
       <div className="turn-node__meta turn-node__drag-handle">
         <span>
@@ -113,7 +143,13 @@ export function TurnNode({ id, data, selected }: NodeProps) {
           {nodeData.title}
         </h2>
       )}
-      {editingField === "summary" ? (
+      {nodeData.answerExpansion?.displayMode === "expanded" ? (
+        <MiniMindMap
+          expansion={nodeData.answerExpansion}
+          selectedMiniNodeId={nodeData.selectedMiniNodeId}
+          onSelect={(miniNodeId) => nodeData.onMiniNodeSelect?.(id, miniNodeId)}
+        />
+      ) : editingField === "summary" ? (
         <textarea
           className="turn-node__editor"
           defaultValue={nodeData.summary}
@@ -147,5 +183,134 @@ export function TurnNode({ id, data, selected }: NodeProps) {
       ) : null}
       <Handle type="source" position={Position.Bottom} />
     </article>
+  );
+}
+
+function MiniMindMap({
+  expansion,
+  selectedMiniNodeId,
+  onSelect
+}: {
+  expansion: AnswerExpansion;
+  selectedMiniNodeId?: string;
+  onSelect: (miniNodeId: string) => void;
+}) {
+  const layout = calculateMiniMapLayout(expansion);
+  const nodeById = new Map(expansion.nodes.map((node) => [node.id, node]));
+  const summaryTargets = new Set(
+    expansion.links
+      .filter((link) => link.relationship === "summary")
+      .map((link) => link.target)
+      .filter((targetId) => expansion.links.filter((link) => link.relationship === "summary" && link.target === targetId).length >= 2)
+  );
+
+  return (
+    <div
+      className={`turn-node__mini-map turn-node__mini-map--${expansion.layoutDirection} nodrag nopan nowheel`}
+      style={{ width: layout.width, height: layout.height }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <svg className="turn-node__mini-links" aria-hidden="true" width={layout.width} height={layout.height}>
+        {expansion.links.map((link, index) => {
+          const sourceLayout = layout.nodes[link.source];
+          const targetLayout = layout.nodes[link.target];
+          const source = nodeById.get(link.source);
+          const target = nodeById.get(link.target);
+          if (!sourceLayout || !targetLayout || !source || !target) return null;
+          const sourceColor = colorValue(source.color as NodeColorName) ?? "var(--cm-primary)";
+          const direction = expansion.layoutDirection === "left" ? -1 : 1;
+          const sourceX = sourceLayout.x + (direction === 1 ? sourceLayout.width : 0);
+          const targetX = targetLayout.x + (direction === 1 ? 0 : targetLayout.width);
+          const sourceY = sourceLayout.y + sourceLayout.height / 2;
+          const targetY = targetLayout.y + targetLayout.height / 2;
+          const midX = sourceX + direction * Math.max(34, Math.abs(targetX - sourceX) / 2);
+          const isSummary = link.relationship === "summary";
+          if (isSummary && summaryTargets.has(link.target)) return null;
+          return (
+            <path
+              key={link.id ?? index}
+              className={`turn-node__mini-link ${isSummary ? "is-summary" : ""}`}
+              d={`M ${sourceX} ${sourceY} C ${midX} ${sourceY}, ${midX} ${targetY}, ${targetX} ${targetY}`}
+              style={{ "--mini-link-color": sourceColor } as CSSProperties}
+            />
+          );
+        })}
+        {[...summaryTargets].map((targetId) => {
+          const targetLayout = layout.nodes[targetId];
+          const target = nodeById.get(targetId);
+          if (!targetLayout || !target) return null;
+          const sources = expansion.links
+            .filter((link) => link.relationship === "summary" && link.target === targetId)
+            .map((link) => layout.nodes[link.source])
+            .filter(Boolean);
+          if (sources.length < 2) return null;
+          const minY = Math.min(...sources.map((node) => node.y));
+          const maxY = Math.max(...sources.map((node) => node.y + node.height));
+          if (maxY - minY > 260) return null;
+          const direction = expansion.layoutDirection === "left" ? -1 : 1;
+          const sourceEdge =
+            direction === 1
+              ? Math.max(...sources.map((node) => node.x + node.width))
+              : Math.min(...sources.map((node) => node.x));
+          const targetEdge = targetLayout.x + (direction === 1 ? 0 : targetLayout.width);
+          const gap = Math.abs(targetEdge - sourceEdge);
+          if (gap < 18) return null;
+          const x = targetEdge - direction * Math.min(16, Math.max(8, gap / 2));
+          const bend = 10 * direction;
+          const midY = (minY + maxY) / 2;
+          const branchColor = colorValue(target.color as NodeColorName) ?? "var(--cm-primary)";
+          return (
+            <path
+              key={`summary-brace-${targetId}`}
+              className="turn-node__mini-summary-brace"
+              d={`M ${x - bend} ${minY} Q ${x} ${midY - 10}, ${x - bend} ${midY} Q ${x} ${midY + 10}, ${x - bend} ${maxY}`}
+              style={{ "--mini-link-color": branchColor } as CSSProperties}
+            />
+          );
+        })}
+      </svg>
+      {expansion.nodes.map((miniNode) => {
+        const item = layout.nodes[miniNode.id];
+        if (!item) return null;
+        return (
+          <button
+            key={miniNode.id}
+            type="button"
+            data-mini-node-id={miniNode.id}
+            className={`turn-node__mini-node ${miniNode.role === "branch" ? "is-branch" : ""} ${
+              miniNode.role === "summary" ? "is-summary" : ""
+            } ${miniNode.important ? "is-important" : ""} ${selectedMiniNodeId === miniNode.id ? "is-selected" : ""}`}
+            title={miniNode.title}
+            style={
+              {
+                left: item.x,
+                top: item.y,
+                width: item.width,
+                height: item.height,
+                "--node-accent": colorValue(miniNode.color as NodeColorName)
+              } as CSSProperties
+            }
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onSelect(miniNode.id);
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onSelect(miniNode.id);
+            }}
+          >
+            {miniNode.title}
+          </button>
+        );
+      })}
+    </div>
   );
 }

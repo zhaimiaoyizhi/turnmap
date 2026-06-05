@@ -1,10 +1,17 @@
 ﻿import type { Edge, Node, XYPosition } from "@xyflow/react";
 import type { SourceAnchor } from "../../shared/types.ts";
+import type { AnswerExpansion } from "../ai/answer-expansion.ts";
 import { sanitizeSourceAnchors, sourceAnchorsFromNodeData } from "./source-anchors.ts";
 import { isNodeColorName, type NodeColorName } from "./graph-colors.ts";
+import type { TopicGroupRecord } from "./topic-collapse.ts";
 
 export type LayoutMode = "single" | "radial" | "list" | "two-sided";
 type NodeStatus = "open" | "review" | "done";
+export type StoredNodeDimensions = {
+  width: number;
+  height: number;
+  manual: boolean;
+};
 type StoredNodeOverride = {
   title?: string;
   summary?: string;
@@ -14,6 +21,8 @@ type StoredNodeOverride = {
   color?: NodeColorName;
   collapsed?: boolean;
   important?: boolean;
+  dimensions?: StoredNodeDimensions;
+  answerExpansion?: AnswerExpansion;
 };
 
 type StoredGraph = {
@@ -32,16 +41,21 @@ type StoredGraph = {
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
+    dimensions?: StoredNodeDimensions;
+    answerExpansion?: AnswerExpansion;
+    topicGroupId?: string;
+    topicGroupMemberIds?: string[];
   }>;
   hiddenNodeIds?: string[];
   layoutMode?: LayoutMode;
   hiddenRoot?: boolean;
   hiddenAutoEdgeIds?: string[];
+  topicGroups?: TopicGroupRecord[];
 };
 
 const STORAGE_PREFIX = "turnmap.graph.";
 const DEFAULT_LAYOUT_KEY = "turnmap.defaultLayout";
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 4;
 
 function isDefaultRootSummary(summary: unknown): boolean {
   return typeof summary === "string" && /^\d+\s+mapped turns$/i.test(summary.trim());
@@ -92,6 +106,54 @@ function nodeStatus(value: unknown): NodeStatus | undefined {
   return value === "open" || value === "review" || value === "done" ? value : undefined;
 }
 
+function storedDimensions(value: unknown): StoredNodeDimensions | undefined {
+  const dimensions = value as Partial<StoredNodeDimensions> | undefined;
+  if (
+    !dimensions ||
+    typeof dimensions.width !== "number" ||
+    typeof dimensions.height !== "number" ||
+    !Number.isFinite(dimensions.width) ||
+    !Number.isFinite(dimensions.height)
+  ) {
+    return undefined;
+  }
+  return {
+    width: Math.max(1, Math.round(dimensions.width)),
+    height: Math.max(1, Math.round(dimensions.height)),
+    manual: Boolean(dimensions.manual)
+  };
+}
+
+function storedAnswerExpansion(value: unknown): AnswerExpansion | undefined {
+  const expansion = value as AnswerExpansion | undefined;
+  if (
+    !expansion ||
+    expansion.schemaVersion !== 2 ||
+    (expansion.displayMode !== "expanded" && expansion.displayMode !== "original") ||
+    (expansion.layoutDirection !== "left" && expansion.layoutDirection !== "right") ||
+    !Array.isArray(expansion.nodes) ||
+    expansion.nodes.length < 1
+  ) {
+    return undefined;
+  }
+  return expansion;
+}
+
+function storedTopicGroups(value: unknown): TopicGroupRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((group): group is TopicGroupRecord => {
+    const candidate = group as TopicGroupRecord;
+    return (
+      typeof candidate?.id === "string" &&
+      typeof candidate.topicNodeId === "string" &&
+      typeof candidate.title === "string" &&
+      Array.isArray(candidate.memberNodeIds) &&
+      Array.isArray(candidate.nodeSnapshots) &&
+      Array.isArray(candidate.edgeSnapshots)
+    );
+  });
+}
+
 export async function loadStoredGraph(conversationId: string): Promise<StoredGraph> {
   const result = await chrome.storage.local.get(storageKey(conversationId));
   const value = result[storageKey(conversationId)] as StoredGraph | undefined;
@@ -105,19 +167,28 @@ export async function loadStoredGraph(conversationId: string): Promise<StoredGra
         nodeId,
         {
           ...override,
-          sourceAnchors: sanitizeSourceAnchors(override?.sourceAnchors)
+          sourceAnchors: sanitizeSourceAnchors(override?.sourceAnchors),
+          dimensions: storedDimensions(override?.dimensions),
+          answerExpansion: storedAnswerExpansion(override?.answerExpansion)
         }
       ])
     ),
     customNodes:
       value?.customNodes?.map((node) => ({
         ...node,
-        sourceAnchors: sanitizeSourceAnchors(node.sourceAnchors)
+        sourceAnchors: sanitizeSourceAnchors(node.sourceAnchors),
+        dimensions: storedDimensions(node.dimensions),
+        answerExpansion: storedAnswerExpansion(node.answerExpansion),
+        topicGroupId: typeof node.topicGroupId === "string" ? node.topicGroupId : undefined,
+        topicGroupMemberIds: Array.isArray(node.topicGroupMemberIds)
+          ? node.topicGroupMemberIds.filter((nodeId) => typeof nodeId === "string")
+          : undefined
       })) ?? [],
     hiddenNodeIds: value?.hiddenNodeIds ?? [],
     layoutMode: value?.layoutMode,
     hiddenRoot: value?.hiddenRoot ?? false,
-    hiddenAutoEdgeIds: value?.hiddenAutoEdgeIds ?? []
+    hiddenAutoEdgeIds: value?.hiddenAutoEdgeIds ?? [],
+    topicGroups: storedTopicGroups(value?.topicGroups)
   };
 }
 
@@ -128,7 +199,8 @@ export async function saveStoredGraph(
   layoutMode?: LayoutMode,
   hiddenRoot = false,
   hiddenAutoEdgeIds: string[] = [],
-  hiddenNodeIds: string[] = []
+  hiddenNodeIds: string[] = [],
+  topicGroups: TopicGroupRecord[] = []
 ): Promise<void> {
   const positions = Object.fromEntries(nodes.map((node) => [node.id, node.position]));
   const nodeOverrides = Object.fromEntries(
@@ -152,7 +224,9 @@ export async function saveStoredGraph(
         sourceAnchors: sourceAnchorsFromNodeData(node.data ?? {}),
         color: isNodeColorName(node.data?.color) ? node.data.color : undefined,
         collapsed: typeof node.data?.collapsed === "boolean" ? node.data.collapsed : undefined,
-        important: typeof node.data?.important === "boolean" ? node.data.important : undefined
+        important: typeof node.data?.important === "boolean" ? node.data.important : undefined,
+        dimensions: storedDimensions(node.data?.dimensions),
+        answerExpansion: storedAnswerExpansion(node.data?.answerExpansion)
       }
     ])
   );
@@ -168,7 +242,13 @@ export async function saveStoredGraph(
       sourceAnchors: sourceAnchorsFromNodeData(node.data ?? {}),
       color: isNodeColorName(node.data?.color) ? node.data.color : undefined,
       collapsed: typeof node.data?.collapsed === "boolean" ? node.data.collapsed : undefined,
-      important: typeof node.data?.important === "boolean" ? node.data.important : undefined
+      important: typeof node.data?.important === "boolean" ? node.data.important : undefined,
+      dimensions: storedDimensions(node.data?.dimensions),
+      answerExpansion: storedAnswerExpansion(node.data?.answerExpansion),
+      topicGroupId: typeof node.data?.topicGroupId === "string" ? node.data.topicGroupId : undefined,
+      topicGroupMemberIds: Array.isArray(node.data?.topicGroupMemberIds)
+        ? node.data.topicGroupMemberIds.filter((nodeId) => typeof nodeId === "string")
+        : undefined
     }));
 
   await chrome.storage.local.set({
@@ -181,7 +261,8 @@ export async function saveStoredGraph(
       hiddenNodeIds,
       layoutMode,
       hiddenRoot,
-      hiddenAutoEdgeIds
+      hiddenAutoEdgeIds,
+      topicGroups: storedTopicGroups(topicGroups)
     } satisfies StoredGraph
   });
 }

@@ -15,6 +15,17 @@ import {
 } from "@xyflow/react";
 import type { SourceAnchor, Turn } from "../../shared/types.ts";
 import { jumpToTurnInActiveTab } from "../../shared/messaging";
+import {
+  calculateMiniMapLayout,
+  deleteMiniNode,
+  type AnswerExpansionProgressStage,
+  expandTurnAnswer,
+  miniNodeDescendantIds,
+  updateMiniNode,
+  type AnswerExpansion,
+  type AnswerMiniNode,
+  type MiniMapLayoutDirection
+} from "../ai/answer-expansion";
 import { suggestSemanticEdges } from "../ai/link-suggestions";
 import { summarizeTurn, summarizeTurns } from "../ai/node-summary";
 import { buildTopicCandidatePairs } from "../ai/topic-analysis";
@@ -27,6 +38,8 @@ import {
   applyNodeColorRendering,
   loadUiSettings,
   saveUiSettings,
+  UI_SETTINGS_STORAGE_KEYS,
+  type LinkConnectionStyle,
   type NodeColorRenderMode
 } from "../settings/ui-settings-storage";
 import type { ApiTaskKind, ApiTaskStatus } from "../task-log";
@@ -55,6 +68,20 @@ import {
   type NodeColorName
 } from "./graph-colors";
 import {
+  DEFAULT_AI_EDGE_WEIGHT,
+  DEFAULT_AUTO_SEQUENCE_EDGE_WEIGHT,
+  DEFAULT_AUTO_TOPIC_EDGE_WEIGHT,
+  DEFAULT_TOPIC_ANALYSIS_EDGE_WEIGHT,
+  DEFAULT_TOPIC_PROXY_EDGE_WEIGHT,
+  DEFAULT_USER_EDGE_WEIGHT,
+  edgeStrokeOpacity,
+  edgeStrokeWidth,
+  normalizeEdgeWeight,
+  weightFromConfidence,
+  weightPercent
+} from "./edge-weight";
+import { graphIssuesSummary, repairGraphSnapshot, type GraphIssue } from "./graph-health";
+import {
   mergeSourceAnchors,
   normalizeNodeTags,
   resolveSourceTurnsForAnchors,
@@ -69,7 +96,13 @@ import {
   summaryFromTurn,
   titleFromTurn
 } from "./summary-behavior.ts";
-import { buildCollapsedTopic } from "./topic-collapse";
+import {
+  buildCollapsedTopic,
+  buildTopicGroupRecord,
+  buildTopicProxyEdges,
+  topicGroupHasNestedSelection,
+  type TopicGroupRecord
+} from "./topic-collapse";
 
 type TurnMapCanvasProps = {
   conversationId: string;
@@ -99,7 +132,20 @@ type TurnNodeData = {
   color?: NodeColorName;
   collapsed?: boolean;
   important?: boolean;
+  dimensions?: { width: number; height: number; manual: boolean };
+  answerExpansion?: AnswerExpansion;
+  topicGroupId?: string;
+  topicGroupMemberIds?: string[];
   onUpdate?: (nodeId: string, updates: { title?: string; summary?: string }) => void;
+  onResize?: (nodeId: string, dimensions: { width: number; height: number; manual: boolean }) => void;
+  onMiniNodeUpdate?: (
+    nodeId: string,
+    miniNodeId: string,
+    updates: Partial<Pick<AnswerMiniNode, "title" | "color" | "important">>
+  ) => void;
+  onMiniNodeDelete?: (nodeId: string, miniNodeId: string) => void;
+  onMiniNodeSelect?: (nodeId: string, miniNodeId: string) => void;
+  selectedMiniNodeId?: string;
   onSummarize?: (nodeId: string) => void;
   onJump?: (nodeId: string) => void;
   isSummarizing?: boolean;
@@ -116,6 +162,10 @@ type CustomNodeRecord = {
   color?: NodeColorName;
   collapsed?: boolean;
   important?: boolean;
+  dimensions?: { width: number; height: number; manual: boolean };
+  answerExpansion?: AnswerExpansion;
+  topicGroupId?: string;
+  topicGroupMemberIds?: string[];
 };
 
 type GraphSnapshot = {
@@ -124,6 +174,7 @@ type GraphSnapshot = {
   hiddenRoot: boolean;
   hiddenAutoEdgeIds: string[];
   hiddenNodeIds: string[];
+  topicGroups: TopicGroupRecord[];
 };
 
 type EdgeRelationship =
@@ -139,9 +190,13 @@ type EdgeRelationship =
 type RelationshipEdgeData = {
   relationship: EdgeRelationship;
   important?: boolean;
+  weight?: number;
   confidence?: number;
   reason?: string;
   createdBy?: "ai" | "user" | "topic-analysis";
+  originalEdgeId?: string;
+  proxyKind?: "incoming" | "outgoing";
+  topicGroupId?: string;
 };
 
 type ExportedGraph = {
@@ -155,6 +210,7 @@ type ExportedGraph = {
     hiddenRoot?: boolean;
     hiddenAutoEdgeIds?: string[];
     hiddenNodeIds?: string[];
+    topicGroups?: TopicGroupRecord[];
   };
   appearance?: ExportAppearance;
   nodes?: Array<{
@@ -168,6 +224,10 @@ type ExportedGraph = {
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
+    dimensions?: { width: number; height: number; manual: boolean };
+    answerExpansion?: AnswerExpansion;
+    topicGroupId?: string;
+    topicGroupMemberIds?: string[];
     turnId?: string;
     isConversationRoot?: boolean;
   }>;
@@ -178,9 +238,13 @@ type ExportedGraph = {
     label?: unknown;
     relationship?: EdgeRelationship;
     important?: boolean;
+    weight?: number;
     confidence?: number;
     reason?: string;
     createdBy?: "ai" | "user" | "topic-analysis";
+    originalEdgeId?: string;
+    proxyKind?: "incoming" | "outgoing";
+    topicGroupId?: string;
     isAuto?: boolean;
   }>;
 };
@@ -197,6 +261,115 @@ type GraphAppearance = {
 const nodeTypes = {
   turnNode: TurnNode
 };
+
+let activeLinkConnectionStyle: LinkConnectionStyle = "curved";
+
+function edgeTypeForLinkConnectionStyle(style: LinkConnectionStyle): Edge["type"] {
+  return style === "angled" ? "smoothstep" : "default";
+}
+
+function nodeDimensionsStyle(
+  dimensions: { width: number; height: number; manual: boolean } | undefined,
+  fallback: { width: number; height: number }
+): { width: number; height: number } {
+  return {
+    width: dimensions?.width ?? fallback.width,
+    height: dimensions?.height ?? fallback.height
+  };
+}
+
+function estimateWrappedLineCount(text: string | undefined, charsPerLine: number, maxLines = 40): number {
+  const clean = (text ?? "").trim();
+  if (!clean) return 1;
+  const lines = clean.split(/\r?\n/).flatMap((line) => {
+    const length = Math.max(1, line.trim().length);
+    return Array.from({ length: Math.ceil(length / Math.max(8, charsPerLine)) });
+  });
+  return Math.max(1, Math.min(maxLines, lines.length));
+}
+
+function tagRowCount(tags: string[] | undefined, width: number): number {
+  if (!tags?.length) return 0;
+  const capacity = Math.max(1, Math.floor((width - 32) / 78));
+  return Math.ceil(tags.length / capacity);
+}
+
+function originalContentDimensions(node: Node<TurnNodeData>): { width: number; height: number; manual: boolean } {
+  const titleLength = node.data.title.trim().length;
+  const summaryLength = node.data.summary.trim().length;
+  const width = Math.max(
+    node.data.isConversationRoot ? 300 : 280,
+    Math.min(680, 280 + Math.round(Math.sqrt(Math.max(titleLength * 8, summaryLength)) * 18))
+  );
+  const charsPerLine = Math.max(18, Math.floor((width - 32) / 7));
+  const titleLines = estimateWrappedLineCount(node.data.title, charsPerLine, 4);
+  const summaryLines = estimateWrappedLineCount(node.data.summary, charsPerLine, 36);
+  const badgeRows = tagRowCount(node.data.tags, width);
+  const height = Math.max(
+    node.data.isConversationRoot ? 160 : 150,
+    Math.min(980, 62 + titleLines * 20 + summaryLines * 18 + badgeRows * 28)
+  );
+  return { width, height, manual: false };
+}
+
+function compactCollapsedDimensions(node: Node<TurnNodeData>): { width: number; height: number; manual: boolean } {
+  const titleWidth = 170 + Math.min(260, Math.round(node.data.title.trim().length * 6.8));
+  const rawWidth = Number(node.style?.width ?? node.data.dimensions?.width ?? titleWidth);
+  const width = Math.max(node.data.isConversationRoot ? 260 : 240, Math.min(560, Math.max(titleWidth, Math.round(rawWidth))));
+  const badgeRows = tagRowCount(node.data.tags, width);
+  return {
+    width,
+    height: Math.max(120, 94 + badgeRows * 26),
+    manual: false
+  };
+}
+
+function isAutoCollapsedDimensions(dimensions: TurnNodeData["dimensions"]): boolean {
+  return Boolean(dimensions && !dimensions.manual);
+}
+
+function expandedContentDimensions(expansion: AnswerExpansion): { width: number; height: number; manual: boolean } {
+  const miniLayout = calculateMiniMapLayout(expansion);
+  return {
+    width: Math.max(500, Math.min(2200, miniLayout.width + 32)),
+    height: Math.max(320, Math.min(3200, miniLayout.height + 132)),
+    manual: false
+  };
+}
+
+function contentFittingDimensions(node: Node<TurnNodeData>): { width: number; height: number; manual: boolean } {
+  if (node.data.collapsed) return compactCollapsedDimensions(node);
+  if (node.data.answerExpansion?.displayMode === "expanded") return expandedContentDimensions(node.data.answerExpansion);
+  return originalContentDimensions(node);
+}
+
+function withContentFittingDimensions(node: Node<TurnNodeData>, data: TurnNodeData): Node<TurnNodeData> {
+  const draftNode = { ...node, data };
+  const dimensions = contentFittingDimensions(draftNode);
+  return {
+    ...draftNode,
+    style: {
+      ...node.style,
+      width: dimensions.width,
+      height: dimensions.height
+    },
+    data: {
+      ...data,
+      dimensions
+    }
+  };
+}
+
+function edgeDisplayColor(color: string): string {
+  const match = color.trim().match(/^#([0-9a-f]{6})$/i);
+  if (!match) return color;
+  const value = match[1];
+  const darken = (component: string) =>
+    Math.max(0, Math.min(255, Math.round(Number.parseInt(component, 16) / 1.5)))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${darken(value.slice(0, 2))}${darken(value.slice(2, 4))}${darken(value.slice(4, 6))}`;
+}
 
 const RELATIONSHIP_OPTIONS: Array<{ value: EdgeRelationship; label: string }> = [
   { value: "related", label: "Related" },
@@ -364,6 +537,10 @@ function nodesFromTurns(
       color?: NodeColorName;
       collapsed?: boolean;
       important?: boolean;
+      dimensions?: { width: number; height: number; manual: boolean };
+      answerExpansion?: AnswerExpansion;
+      topicGroupId?: string;
+      topicGroupMemberIds?: string[];
     }
   >,
   onUpdate: TurnNodeData["onUpdate"],
@@ -383,6 +560,7 @@ function nodesFromTurns(
     type: "turnNode",
     dragHandle: ".turn-node__drag-handle",
     position: positions["conversation-root"] ?? layoutPositions["conversation-root"],
+    style: nodeDimensionsStyle(rootOverride?.dimensions, { width: 300, height: 180 }),
     data: {
       title: rootTitle,
       summary:
@@ -394,6 +572,8 @@ function nodesFromTurns(
       color: rootOverride?.color,
       collapsed: rootOverride?.collapsed,
       important: rootOverride?.important,
+      dimensions: rootOverride?.dimensions,
+      answerExpansion: rootOverride?.answerExpansion,
       isConversationRoot: true,
       onUpdate
     }
@@ -405,6 +585,7 @@ function nodesFromTurns(
     type: "turnNode",
     dragHandle: ".turn-node__drag-handle",
     position: positions[turn.id] ?? layoutPositions[turn.id] ?? { x: 360, y: index * 190 },
+    style: nodeDimensionsStyle(nodeOverrides[turn.id]?.dimensions, { width: 280, height: 220 }),
     data: {
       title: nodeOverrides[turn.id]?.title ?? titleFromTurn(turn),
       summary: nodeOverrides[turn.id]?.summary ?? summaryFromTurn(turn),
@@ -413,6 +594,10 @@ function nodesFromTurns(
       color: nodeOverrides[turn.id]?.color,
       collapsed: nodeOverrides[turn.id]?.collapsed,
       important: nodeOverrides[turn.id]?.important,
+      dimensions: nodeOverrides[turn.id]?.dimensions,
+      answerExpansion: nodeOverrides[turn.id]?.answerExpansion,
+      topicGroupId: nodeOverrides[turn.id]?.topicGroupId,
+      topicGroupMemberIds: nodeOverrides[turn.id]?.topicGroupMemberIds,
       sourceAnchors: sanitizeSourceAnchors(nodeOverrides[turn.id]?.sourceAnchors ?? [turn.sourceAnchor]),
       turn,
       onUpdate,
@@ -426,6 +611,7 @@ function nodesFromTurns(
     type: "turnNode",
     dragHandle: ".turn-node__drag-handle",
     position: positions[node.id] ?? node.position,
+    style: nodeDimensionsStyle(nodeOverrides[node.id]?.dimensions ?? node.dimensions, { width: 280, height: 220 }),
     data: {
       title: nodeOverrides[node.id]?.title ?? node.title,
       summary: nodeOverrides[node.id]?.summary ?? node.summary,
@@ -435,6 +621,10 @@ function nodesFromTurns(
       color: nodeOverrides[node.id]?.color ?? node.color,
       collapsed: nodeOverrides[node.id]?.collapsed ?? node.collapsed,
       important: nodeOverrides[node.id]?.important ?? node.important,
+      dimensions: nodeOverrides[node.id]?.dimensions ?? node.dimensions,
+      answerExpansion: nodeOverrides[node.id]?.answerExpansion ?? node.answerExpansion,
+      topicGroupId: nodeOverrides[node.id]?.topicGroupId ?? node.topicGroupId,
+      topicGroupMemberIds: nodeOverrides[node.id]?.topicGroupMemberIds ?? node.topicGroupMemberIds,
       isCustomNode: true,
       onUpdate
     }
@@ -509,7 +699,8 @@ function autoEdgesFromTurns(
         target: turn.id,
         label: isTopicHead ? "topic" : "next",
         data: {
-          relationship
+          relationship,
+          weight: isTopicHead ? DEFAULT_AUTO_TOPIC_EDGE_WEIGHT : DEFAULT_AUTO_SEQUENCE_EDGE_WEIGHT
         } satisfies RelationshipEdgeData,
         style: relationshipStyle(relationship)
       };
@@ -602,15 +793,74 @@ function graphNodesMatchTurns(nodes: Node<TurnNodeData>[], turns: Turn[], hidden
   );
 }
 
-function relationshipStyle(relationship: EdgeRelationship, important = false): Edge["style"] {
+function relationshipStyle(
+  relationship: EdgeRelationship,
+  important = false,
+  weight = DEFAULT_USER_EDGE_WEIGHT
+): Edge["style"] {
+  const color = edgeDisplayColor(relationshipColor(relationship));
   return {
-    stroke: relationshipColor(relationship),
-    strokeWidth: important ? 5.5 : 1.8
+    stroke: color,
+    strokeOpacity: edgeStrokeOpacity(weight, important),
+    strokeWidth: edgeStrokeWidth(weight, important)
   };
 }
 
 function relationshipColor(relationship: EdgeRelationship): string {
   return colorForRelationship(relationship);
+}
+
+function edgeVisualStyle(edge: Edge): Edge["style"] {
+  const data = edge.data as RelationshipEdgeData | undefined;
+  const relationship = data?.relationship ?? "related";
+  const color = edgeDisplayColor(relationshipColor(relationship));
+  const weight = normalizeEdgeWeight(
+    data?.weight,
+    isAutoEdge(edge)
+      ? edge.id.startsWith("conversation-root-")
+        ? DEFAULT_AUTO_TOPIC_EDGE_WEIGHT
+        : DEFAULT_AUTO_SEQUENCE_EDGE_WEIGHT
+      : isTopicProxyEdge(edge)
+        ? DEFAULT_TOPIC_PROXY_EDGE_WEIGHT
+        : DEFAULT_USER_EDGE_WEIGHT
+  );
+  if (isTopicProxyEdge(edge)) {
+    return {
+      stroke: color,
+      strokeDasharray: "6 7",
+      strokeLinecap: "round",
+      strokeOpacity: edgeStrokeOpacity(weight) * 0.72,
+      strokeWidth: edgeStrokeWidth(weight)
+    };
+  }
+  if (isAutoEdge(edge)) {
+    return {
+      stroke: edgeDisplayColor("#64748b"),
+      strokeLinecap: "round",
+      strokeOpacity: edgeStrokeOpacity(weight) * 0.72,
+      strokeWidth: edgeStrokeWidth(weight)
+    };
+  }
+  return {
+    stroke: color,
+    filter: data?.important ? `drop-shadow(0 0 5px ${color})` : undefined,
+    strokeLinecap: "round",
+    strokeOpacity: edgeStrokeOpacity(weight, data?.important),
+    strokeWidth: edgeStrokeWidth(weight, data?.important)
+  };
+}
+
+function edgeVisualClass(edge: Edge): string {
+  const data = edge.data as RelationshipEdgeData | undefined;
+  return [
+    isAutoEdge(edge) ? "edge-auto" : "",
+    isTopicProxyEdge(edge) ? "edge-proxy" : "",
+    data?.important ? "edge-important" : "",
+    data?.createdBy === "ai" || data?.createdBy === "topic-analysis" ? "edge-semantic" : "",
+    data?.createdBy === "user" ? "edge-user" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function RelationshipColorPicker({
@@ -641,24 +891,45 @@ function RelationshipColorPicker({
   );
 }
 
-function applyEdgeStyle(edge: Edge): Edge {
+function applyEdgeStyle(edge: Edge, linkConnectionStyle: LinkConnectionStyle = activeLinkConnectionStyle): Edge {
   const data = edge.data as RelationshipEdgeData | undefined;
   const relationship = data?.relationship ?? "related";
+  const fallbackWeight = isAutoEdge(edge)
+    ? edge.id.startsWith("conversation-root-")
+      ? DEFAULT_AUTO_TOPIC_EDGE_WEIGHT
+      : DEFAULT_AUTO_SEQUENCE_EDGE_WEIGHT
+    : isTopicProxyEdge(edge)
+      ? DEFAULT_TOPIC_PROXY_EDGE_WEIGHT
+      : data?.createdBy === "ai"
+        ? weightFromConfidence(data?.confidence, DEFAULT_AI_EDGE_WEIGHT)
+        : data?.createdBy === "topic-analysis"
+          ? weightFromConfidence(data?.confidence, DEFAULT_TOPIC_ANALYSIS_EDGE_WEIGHT)
+          : DEFAULT_USER_EDGE_WEIGHT;
+  const nextData: RelationshipEdgeData = {
+    ...data,
+    relationship,
+    weight: normalizeEdgeWeight(data?.weight, fallbackWeight)
+  };
   return {
     ...edge,
+    type: edgeTypeForLinkConnectionStyle(linkConnectionStyle),
     label: edge.label ?? relationship,
-    style: relationshipStyle(relationship, data?.important)
+    data: nextData,
+    className: edgeVisualClass({ ...edge, data: nextData }),
+    style: edgeVisualStyle({ ...edge, data: nextData })
   };
 }
 
 function acceptedSuggestionEdge(suggestion: Edge): Edge {
   const data = suggestion.data as RelationshipEdgeData | undefined;
+  const weight = normalizeEdgeWeight(data?.weight, weightFromConfidence(data?.confidence, DEFAULT_AI_EDGE_WEIGHT));
   return applyEdgeStyle({
     ...suggestion,
     id: `user-${suggestion.id}`,
     data: {
       ...data,
       relationship: data?.relationship ?? "related",
+      weight,
       createdBy: "user"
     } satisfies RelationshipEdgeData
   });
@@ -666,6 +937,23 @@ function acceptedSuggestionEdge(suggestion: Edge): Edge {
 
 function isAutoEdge(edge: Edge): boolean {
   return edge.id.startsWith("conversation-root-") || edge.id.startsWith("sequence-");
+}
+
+function isTopicProxyEdge(edge: Edge): boolean {
+  return edge.id.startsWith("topic-proxy-") || Boolean((edge.data as RelationshipEdgeData | undefined)?.proxyKind);
+}
+
+function topicEdgeSnapshot(edge: Edge) {
+  const data = edge.data as RelationshipEdgeData | undefined;
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    label: edge.label,
+    data: edge.data ? { ...edge.data } : undefined,
+    isAuto: isAutoEdge(edge),
+    weight: normalizeEdgeWeight(data?.weight)
+  };
 }
 
 function nodeOverridesFromNodes(
@@ -681,6 +969,10 @@ function nodeOverridesFromNodes(
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
+    dimensions?: { width: number; height: number; manual: boolean };
+    answerExpansion?: AnswerExpansion;
+    topicGroupId?: string;
+    topicGroupMemberIds?: string[];
   }
 > {
   return Object.fromEntries(
@@ -694,7 +986,11 @@ function nodeOverridesFromNodes(
         sourceAnchors: sanitizeSourceAnchors(node.data.sourceAnchors),
         color: node.data.color,
         collapsed: node.data.collapsed,
-        important: node.data.important
+        important: node.data.important,
+        dimensions: node.data.dimensions,
+        answerExpansion: node.data.answerExpansion,
+        topicGroupId: node.data.topicGroupId,
+        topicGroupMemberIds: node.data.topicGroupMemberIds
       }
     ])
   );
@@ -713,7 +1009,11 @@ function customRecordsFromNodes(nodes: Node<TurnNodeData>[]): CustomNodeRecord[]
       sourceAnchors: sanitizeSourceAnchors(node.data.sourceAnchors),
       color: node.data.color,
       collapsed: node.data.collapsed,
-      important: node.data.important
+      important: node.data.important,
+      dimensions: node.data.dimensions,
+      answerExpansion: node.data.answerExpansion,
+      topicGroupId: node.data.topicGroupId,
+      topicGroupMemberIds: node.data.topicGroupMemberIds
     }));
 }
 
@@ -922,10 +1222,11 @@ function serializeGraph(
   hiddenRoot: boolean,
   hiddenAutoEdgeIds: string[],
   hiddenNodeIds: string[],
+  topicGroups: TopicGroupRecord[],
   appearance?: GraphAppearance
 ): string {
   const payload = {
-    schemaVersion: 2,
+    schemaVersion: 4,
     exportedAt: new Date().toISOString(),
     conversation: {
       id: conversationId,
@@ -936,7 +1237,8 @@ function serializeGraph(
       mode: layoutMode,
       hiddenRoot,
       hiddenAutoEdgeIds,
-      hiddenNodeIds
+      hiddenNodeIds,
+      topicGroups
     },
     appearance,
     turns,
@@ -951,6 +1253,10 @@ function serializeGraph(
       color: node.data.color,
       collapsed: node.data.collapsed,
       important: node.data.important,
+      dimensions: node.data.dimensions,
+      answerExpansion: node.data.answerExpansion,
+      topicGroupId: node.data.topicGroupId,
+      topicGroupMemberIds: node.data.topicGroupMemberIds,
       turnId: node.data.turn?.id,
       isConversationRoot: Boolean(node.data.isConversationRoot)
     })),
@@ -963,9 +1269,13 @@ function serializeGraph(
         label: edge.label,
         relationship: data?.relationship ?? (isAutoEdge(edge) ? "references" : "related"),
         important: Boolean(data?.important),
+        weight: normalizeEdgeWeight(data?.weight),
         confidence: data?.confidence,
         reason: data?.reason,
         createdBy: data?.createdBy,
+        originalEdgeId: data?.originalEdgeId,
+        proxyKind: data?.proxyKind,
+        topicGroupId: data?.topicGroupId,
         isAuto: isAutoEdge(edge)
       };
     })
@@ -1001,16 +1311,64 @@ function graphToObsidianCanvas(
 
   const canvasNodes = nodes.map((node) => {
     const color = colorValue(node.data.color);
+    const dimensions = node.data.dimensions;
+    const expansionText =
+      node.data.answerExpansion?.displayMode === "expanded"
+        ? [
+            "Answer expansion:",
+            ...node.data.answerExpansion.nodes.map((miniNode) => `- ${miniNode.title}`)
+          ].join("\n")
+        : "";
     return {
       id: node.id,
       type: "text",
-      text: nodeText(node),
+      text: [nodeText(node), expansionText].filter(Boolean).join("\n\n"),
       x: Math.round(node.position.x),
       y: Math.round(node.position.y),
-      width: node.data.isConversationRoot ? 320 : 300,
-      height: node.data.collapsed ? 120 : node.data.isConversationRoot ? 180 : 220,
+      width: dimensions?.width ?? (node.data.isConversationRoot ? 320 : 300),
+      height: dimensions?.height ?? (node.data.collapsed ? 120 : node.data.isConversationRoot ? 180 : 220),
       color
     };
+  });
+
+  const expansionCanvasNodes = nodes.flatMap((node) => {
+    if (node.data.answerExpansion?.displayMode !== "expanded") return [];
+    const layout = calculateMiniMapLayout(node.data.answerExpansion);
+    const parentColor = colorValue(node.data.color);
+    return node.data.answerExpansion.nodes.map((miniNode) => {
+      const position = layout.nodes[miniNode.id] ?? { x: 0, y: 0, width: 140, height: 70 };
+      return {
+      id: `${node.id}::mini::${miniNode.id}`,
+      type: "text",
+      text: [
+        miniNode.title,
+        `role: ${miniNode.role}`,
+        `branch: ${miniNode.branchId}`,
+        miniNode.parentId ? `parent: ${miniNode.parentId}` : "",
+        node.data.answerExpansion?.layoutDirection ? `direction: ${node.data.answerExpansion.layoutDirection}` : ""
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      x: Math.round(node.position.x + position.x),
+      y: Math.round(node.position.y + (node.data.answerExpansion?.layoutDirection === "left" ? 82 : 82) + position.y),
+      width: position.width,
+      height: position.height,
+      color: (isNodeColorName(miniNode.color) ? colorValue(miniNode.color) : undefined) ?? parentColor
+    };
+    });
+  });
+
+  const expansionCanvasEdges = nodes.flatMap((node) => {
+    if (node.data.answerExpansion?.displayMode !== "expanded") return [];
+    return node.data.answerExpansion.links.map((link) => ({
+      id: `${node.id}::mini-link::${link.id}`,
+      fromNode: `${node.id}::mini::${link.source}`,
+      fromSide: "right",
+      toNode: `${node.id}::mini::${link.target}`,
+      toSide: "left",
+      label: [link.relationship, typeof link.weight === "number" ? `weight ${link.weight}` : ""].filter(Boolean).join(" | "),
+      color: "#64748b"
+    }));
   });
 
   const canvasEdges = edges.map((edge) => {
@@ -1025,6 +1383,7 @@ function graphToObsidianCanvas(
       label: [
         String(edge.label ?? relationship),
         data?.important ? "important" : "",
+        `weight ${weightPercent(data?.weight)}%`,
         typeof data?.confidence === "number" ? `${Math.round(data.confidence * 100)}%` : "",
         data?.reason ? data.reason : ""
       ]
@@ -1036,8 +1395,8 @@ function graphToObsidianCanvas(
 
   return JSON.stringify(
     {
-      nodes: canvasNodes,
-      edges: canvasEdges,
+      nodes: [...canvasNodes, ...expansionCanvasNodes],
+      edges: [...canvasEdges, ...expansionCanvasEdges],
       metadata: {
         name: conversationTitle,
         source: "TurnMap",
@@ -1096,8 +1455,13 @@ const SVG_THEME_COLORS: Record<Exclude<ThemeMode, "browser">, {
 };
 
 function svgNodeHeight(node: Node<TurnNodeData>): number {
+  if (node.data.dimensions?.height) return node.data.dimensions.height;
   if (node.data.collapsed) return node.data.isConversationRoot ? 118 : 108;
   return node.data.isConversationRoot ? 150 : 190;
+}
+
+function svgNodeWidth(node: Node<TurnNodeData>): number {
+  return node.data.dimensions?.width ?? 300;
 }
 
 function svgColorMixStrength(appearance?: GraphAppearance): { fillOpacity: number; strokeOpacity: number; shadowOpacity: number } {
@@ -1109,19 +1473,154 @@ function svgColorMixStrength(appearance?: GraphAppearance): { fillOpacity: numbe
   };
 }
 
+function svgMiniColor(color: unknown, fallback: string): string {
+  return isNodeColorName(color) ? (colorValue(color) ?? fallback) : fallback;
+}
+
+function renderMiniMapSvg(node: Node<TurnNodeData>, mapX: number, mapY: number, fallbackColor: string): string {
+  const expansion = node.data.answerExpansion;
+  if (expansion?.displayMode !== "expanded") return "";
+  const layout = calculateMiniMapLayout(expansion);
+  const nodeById = new Map(expansion.nodes.map((miniNode) => [miniNode.id, miniNode]));
+  const direction = expansion.layoutDirection === "left" ? -1 : 1;
+  const summaryTargets = new Set(
+    expansion.links
+      .filter((link) => link.relationship === "summary")
+      .map((link) => link.target)
+      .filter((targetId) => expansion.links.filter((link) => link.relationship === "summary" && link.target === targetId).length >= 2)
+  );
+
+  const linkMarkup = expansion.links
+    .map((link) => {
+      const sourceLayout = layout.nodes[link.source];
+      const targetLayout = layout.nodes[link.target];
+      const source = nodeById.get(link.source);
+      const target = nodeById.get(link.target);
+      if (!sourceLayout || !targetLayout || !source || !target) return "";
+      const sourceColor = svgMiniColor(source.color, fallbackColor);
+      const sourceX = mapX + sourceLayout.x + (direction === 1 ? sourceLayout.width : 0);
+      const targetX = mapX + targetLayout.x + (direction === 1 ? 0 : targetLayout.width);
+      const sourceY = mapY + sourceLayout.y + sourceLayout.height / 2;
+      const targetY = mapY + targetLayout.y + targetLayout.height / 2;
+      const midX = sourceX + direction * Math.max(28, Math.abs(targetX - sourceX) / 2);
+      const isSummary = link.relationship === "summary";
+      if (isSummary && summaryTargets.has(link.target)) return "";
+      return `<path class="mini-link${isSummary ? " mini-link-summary" : ""}" d="M ${sourceX} ${sourceY} C ${midX} ${sourceY}, ${midX} ${targetY}, ${targetX} ${targetY}" stroke="${sourceColor}" />`;
+    })
+    .join("");
+
+  const braceMarkup = [...summaryTargets]
+    .map((targetId) => {
+      const targetLayout = layout.nodes[targetId];
+      const target = nodeById.get(targetId);
+      if (!targetLayout || !target) return "";
+      const sources = expansion.links
+        .filter((link) => link.relationship === "summary" && link.target === targetId)
+        .map((link) => layout.nodes[link.source])
+        .filter(Boolean);
+      if (sources.length < 2) return "";
+      const minY = Math.min(...sources.map((miniNode) => mapY + miniNode.y));
+      const maxY = Math.max(...sources.map((miniNode) => mapY + miniNode.y + miniNode.height));
+      if (maxY - minY > 260) return "";
+      const sourceEdge =
+        direction === 1
+          ? Math.max(...sources.map((miniNode) => mapX + miniNode.x + miniNode.width))
+          : Math.min(...sources.map((miniNode) => mapX + miniNode.x));
+      const targetEdge = mapX + targetLayout.x + (direction === 1 ? 0 : targetLayout.width);
+      const gap = Math.abs(targetEdge - sourceEdge);
+      if (gap < 18) return "";
+      const x = targetEdge - direction * Math.min(16, Math.max(8, gap / 2));
+      const bend = 10 * direction;
+      const midY = (minY + maxY) / 2;
+      return `<path class="mini-brace" d="M ${x - bend} ${minY} Q ${x} ${midY - 10}, ${x - bend} ${midY} Q ${x} ${midY + 10}, ${x - bend} ${maxY}" stroke="${svgMiniColor(target.color, fallbackColor)}" />`;
+    })
+    .join("");
+
+  const miniNodeMarkup = expansion.nodes
+    .map((miniNode) => {
+      const item = layout.nodes[miniNode.id];
+      if (!item) return "";
+      const accent = svgMiniColor(miniNode.color, fallbackColor);
+      const x = mapX + item.x;
+      const y = mapY + item.y;
+      const lines = wrapText(miniNode.title, item.width - 16, miniNode.role === "branch" ? 12 : 11, 3);
+      const textMarkup = lines
+        .map((line, lineIndex) => `<tspan x="${x + 8}" y="${y + 17 + lineIndex * 14}">${escapeXml(line)}</tspan>`)
+        .join("");
+      return `
+        <g>
+          <rect x="${x}" y="${y}" width="${item.width}" height="${item.height}" rx="6" fill="${accent}" fill-opacity="${miniNode.role === "summary" ? 0.08 : miniNode.role === "branch" ? 0.16 : 0.11}" stroke="${accent}" stroke-opacity="${miniNode.important ? 0.95 : 0.58}" stroke-width="${miniNode.important ? 2 : 1}" ${miniNode.role === "summary" ? 'stroke-dasharray="5 5"' : ""} />
+          <text class="${miniNode.role === "summary" ? "mini-text-summary" : "mini-text"}">${textMarkup}</text>
+        </g>`;
+    })
+    .join("");
+
+  return `
+    <g>
+      <rect x="${mapX}" y="${mapY}" width="${layout.width}" height="${layout.height}" rx="8" fill="transparent" stroke="${fallbackColor}" stroke-opacity="0.14" />
+      ${linkMarkup}
+      ${braceMarkup}
+      ${miniNodeMarkup}
+    </g>`;
+}
+
+function svgEdgeStyle(edge: Edge, relationship: EdgeRelationship): {
+  dash: string;
+  glow: string;
+  marker: string;
+  opacity: number;
+  stroke: string;
+  width: number;
+} {
+  const data = edge.data as RelationshipEdgeData | undefined;
+  const stroke = edgeDisplayColor(isAutoEdge(edge) ? "#64748b" : relationshipColor(relationship));
+  const width = edgeStrokeWidth(data?.weight, data?.important);
+  const opacity = edgeStrokeOpacity(data?.weight, data?.important);
+  if (isTopicProxyEdge(edge)) {
+    return {
+      dash: 'stroke-dasharray="6 7"',
+      glow: "",
+      marker: "",
+      opacity: Math.max(0.38, opacity - 0.16),
+      stroke,
+      width
+    };
+  }
+  if (isAutoEdge(edge)) {
+    return {
+      dash: "",
+      glow: "",
+      marker: "",
+      opacity: Math.max(0.28, opacity - 0.2),
+      stroke,
+      width
+    };
+  }
+  return {
+    dash: "",
+    glow: data?.important
+      ? `<path d="{path}" fill="none" stroke="${stroke}" stroke-width="9" opacity="0.16" stroke-linecap="round" />`
+      : "",
+    marker: 'marker-end="url(#arrow)"',
+    opacity,
+    stroke,
+    width
+  };
+}
+
 function graphToSvg(
   conversationTitle: string,
   nodes: Node<TurnNodeData>[],
   edges: Edge[],
   appearance?: GraphAppearance
 ): string {
-  const nodeWidth = 300;
   const padding = 90;
   const theme = SVG_THEME_COLORS[appearance?.resolvedTheme ?? "day"];
   const colorMix = svgColorMixStrength(appearance);
   const bounds = nodes.reduce(
     (acc, node) => {
       const height = svgNodeHeight(node);
+      const nodeWidth = svgNodeWidth(node);
       return {
         minX: Math.min(acc.minX, node.position.x),
         minY: Math.min(acc.minY, node.position.y),
@@ -1129,7 +1628,7 @@ function graphToSvg(
         maxY: Math.max(acc.maxY, node.position.y + height)
       };
     },
-    { minX: 0, minY: 0, maxX: nodeWidth, maxY: 190 }
+    { minX: 0, minY: 0, maxX: 300, maxY: 190 }
   );
   const offsetX = padding - bounds.minX;
   const offsetY = padding - bounds.minY;
@@ -1144,20 +1643,22 @@ function graphToSvg(
       if (!source || !target) return "";
       const sourceHeight = svgNodeHeight(source);
       const targetHeight = svgNodeHeight(target);
+      const sourceWidth = svgNodeWidth(source);
       const relationship = edgeRelationship(edge);
-      const data = edge.data as RelationshipEdgeData | undefined;
-      const x1 = source.position.x + offsetX + nodeWidth;
+      const x1 = source.position.x + offsetX + sourceWidth;
       const y1 = source.position.y + offsetY + sourceHeight / 2;
       const x2 = target.position.x + offsetX;
       const y2 = target.position.y + offsetY + targetHeight / 2;
       const midX = (x1 + x2) / 2;
+      const path = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
       const label = edge.label ? String(edge.label) : relationship;
+      const visual = svgEdgeStyle(edge, relationship);
+      const glow = visual.glow.replace("{path}", path);
 
       return `
-    <path d="M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}" fill="none" stroke="${relationshipColor(
-      relationship
-    )}" stroke-width="${data?.important ? 5.5 : 1.8}" marker-end="url(#arrow)" opacity="0.78" />
-    <text x="${midX}" y="${(y1 + y2) / 2 - 6}" class="edge-label">${escapeXml(label)}</text>`;
+    ${glow}
+    <path d="${path}" fill="none" stroke="${visual.stroke}" stroke-width="${visual.width}" ${visual.marker} ${visual.dash} stroke-linecap="round" opacity="${visual.opacity}" />
+    <text x="${midX}" y="${(y1 + y2) / 2 - 6}" class="edge-label ${isAutoEdge(edge) ? "edge-label-muted" : ""}">${escapeXml(label)}</text>`;
     })
     .join("");
 
@@ -1182,11 +1683,18 @@ function graphToSvg(
       const x = node.position.x + offsetX;
       const y = node.position.y + offsetY;
       const height = svgNodeHeight(node);
+      const nodeWidth = svgNodeWidth(node);
       const textX = x + 18;
       const textWidth = nodeWidth - 36;
       const clipId = `node-text-clip-${index}`;
       const titleLines = wrapText(node.data.title, textWidth, 14, node.data.collapsed ? 1 : isRoot ? 3 : 2);
-      const summaryLines = wrapText(node.data.summary, textWidth, 12, node.data.collapsed ? 1 : isRoot ? 3 : 5);
+      const hasExpandedMiniMap = node.data.answerExpansion?.displayMode === "expanded";
+      const summaryLines = wrapText(
+        hasExpandedMiniMap ? "" : node.data.summary,
+        textWidth,
+        12,
+        node.data.collapsed ? 1 : isRoot ? 3 : 5
+      );
       const titleMarkup = titleLines
         .map(
           (line, index) =>
@@ -1200,6 +1708,9 @@ function graphToSvg(
             `<tspan x="${textX}" y="${summaryStart + index * 16}">${escapeXml(line)}</tspan>`
         )
         .join("");
+      const miniMarkup = hasExpandedMiniMap
+        ? renderMiniMapSvg(node, x + 16, y + 72 + titleLines.length * 18, accent ?? theme.text)
+        : "";
       const fill = accent
         ? appearance?.nodeColorRendering.mode === "solid"
           ? accent
@@ -1226,6 +1737,7 @@ function graphToSvg(
         }</text>
         <text class="${isRoot ? "title-root" : "title"}">${titleMarkup}</text>
         <text class="${isRoot ? "summary-root" : "summary"}">${summaryMarkup}</text>
+        ${miniMarkup}
       </g>
     </g>`;
     })
@@ -1250,6 +1762,12 @@ function graphToSvg(
       .summary { fill: ${theme.muted}; font: 12px Inter, Arial, sans-serif; }
       .summary-root { fill: ${theme.rootText}; font: 12px Inter, Arial, sans-serif; }
       .edge-label { fill: ${theme.muted}; font: 11px Inter, Arial, sans-serif; paint-order: stroke; stroke: ${theme.labelStroke}; stroke-width: 4px; stroke-linejoin: round; }
+      .edge-label-muted { opacity: 0.42; }
+      .mini-link { fill: none; stroke-linecap: round; stroke-opacity: 0.62; stroke-width: 3px; }
+      .mini-link-summary { stroke-dasharray: 5 7; stroke-opacity: 0.2; stroke-width: 2px; }
+      .mini-brace { fill: none; stroke-linecap: round; stroke-opacity: 0.24; stroke-width: 2.2px; }
+      .mini-text { fill: ${theme.text}; font: 700 11px Inter, Arial, sans-serif; }
+      .mini-text-summary { fill: ${theme.muted}; font: 700 11px Inter, Arial, sans-serif; }
     </style>
     ${nodeGradients}
   </defs>
@@ -1275,6 +1793,12 @@ function graphToMarkdown(
     if (node.data.summary) {
       lines.push("", node.data.summary);
     }
+    if (node.data.answerExpansion?.displayMode === "expanded") {
+      lines.push("", "**Answer expansion**", "");
+      node.data.answerExpansion.nodes.forEach((miniNode) => {
+        lines.push(`- ${miniNode.title}`);
+      });
+    }
     if (node.data.turn) {
       lines.push("", "**User**", "", node.data.turn.userText.trim());
       lines.push("", "**Assistant**", "", node.data.turn.assistantText.trim());
@@ -1290,9 +1814,10 @@ function graphToMarkdown(
       const relationship = edgeRelationship(edge);
       const data = edge.data as RelationshipEdgeData | undefined;
       const important = data?.important ? " important" : "";
+      const weight = ` weight ${weightPercent(data?.weight)}%`;
       const label = edge.label ? ` - ${String(edge.label)}` : "";
       lines.push(
-        `- ${titles.get(edge.source) ?? edge.source} -> ${titles.get(edge.target) ?? edge.target} [${relationship}${important}]${label}`
+        `- ${titles.get(edge.source) ?? edge.source} -> ${titles.get(edge.target) ?? edge.target} [${relationship}${important}${weight}]${label}`
       );
     });
   }
@@ -1310,6 +1835,8 @@ function nodesForAdvancedExport(nodes: Node<TurnNodeData>[]): ExportNode[] {
     color: node.data.color,
     collapsed: node.data.collapsed,
     important: node.data.important,
+    dimensions: node.data.dimensions,
+    answerExpansion: node.data.answerExpansion,
     turn: node.data.turn,
     isConversationRoot: node.data.isConversationRoot,
     position: node.position
@@ -1326,6 +1853,7 @@ function edgesForAdvancedExport(edges: Edge[]): ExportEdge[] {
       label: edge.label,
       relationship: data?.relationship ?? (isAutoEdge(edge) ? "references" : "related"),
       important: data?.important,
+      weight: normalizeEdgeWeight(data?.weight),
       confidence: data?.confidence,
       reason: data?.reason
     };
@@ -1347,6 +1875,53 @@ function isRelationship(value: unknown): value is EdgeRelationship {
     value === "references" ||
     value === "todo"
   );
+}
+
+function normalizeDimensions(value: unknown): { width: number; height: number; manual: boolean } | undefined {
+  const dimensions = value as { width?: unknown; height?: unknown; manual?: unknown } | undefined;
+  if (
+    !dimensions ||
+    typeof dimensions.width !== "number" ||
+    typeof dimensions.height !== "number" ||
+    !Number.isFinite(dimensions.width) ||
+    !Number.isFinite(dimensions.height)
+  ) {
+    return undefined;
+  }
+  return {
+    width: Math.max(220, Math.min(1200, Math.round(dimensions.width))),
+    height: Math.max(120, Math.min(900, Math.round(dimensions.height))),
+    manual: Boolean(dimensions.manual)
+  };
+}
+
+function normalizeImportedExpansion(value: unknown): AnswerExpansion | undefined {
+  const expansion = value as AnswerExpansion | undefined;
+  if (
+    !expansion ||
+    expansion.schemaVersion !== 2 ||
+    (expansion.displayMode !== "expanded" && expansion.displayMode !== "original") ||
+    (expansion.layoutDirection !== "left" && expansion.layoutDirection !== "right") ||
+    !Array.isArray(expansion.nodes)
+  ) {
+    return undefined;
+  }
+  return expansion;
+}
+
+function normalizeImportedTopicGroups(value: unknown): TopicGroupRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((group): group is TopicGroupRecord => {
+    const candidate = group as TopicGroupRecord;
+    return (
+      typeof candidate?.id === "string" &&
+      typeof candidate.topicNodeId === "string" &&
+      typeof candidate.title === "string" &&
+      Array.isArray(candidate.memberNodeIds) &&
+      Array.isArray(candidate.nodeSnapshots) &&
+      Array.isArray(candidate.edgeSnapshots)
+    );
+  });
 }
 
 function parseImportedGraph(text: string): ExportedGraph {
@@ -1389,6 +1964,10 @@ function overridesFromImportedGraph(
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
+    dimensions?: { width: number; height: number; manual: boolean };
+    answerExpansion?: AnswerExpansion;
+    topicGroupId?: string;
+    topicGroupMemberIds?: string[];
   }
 > {
   return Object.fromEntries(
@@ -1407,7 +1986,13 @@ function overridesFromImportedGraph(
           sourceAnchors: sanitizeSourceAnchors(node.sourceAnchors),
           color: isNodeColorName(node.color) ? node.color : undefined,
           collapsed: typeof node.collapsed === "boolean" ? node.collapsed : undefined,
-          important: typeof node.important === "boolean" ? node.important : undefined
+          important: typeof node.important === "boolean" ? node.important : undefined,
+          dimensions: normalizeDimensions(node.dimensions),
+          answerExpansion: normalizeImportedExpansion(node.answerExpansion),
+          topicGroupId: typeof node.topicGroupId === "string" ? node.topicGroupId : undefined,
+          topicGroupMemberIds: Array.isArray(node.topicGroupMemberIds)
+            ? node.topicGroupMemberIds.filter((nodeId) => typeof nodeId === "string")
+            : undefined
         }
       ])
   );
@@ -1430,7 +2015,13 @@ function customNodesFromImportedGraph(graph: ExportedGraph): CustomNodeRecord[] 
       sourceAnchors: sanitizeSourceAnchors(node.sourceAnchors),
       color: isNodeColorName(node.color) ? node.color : undefined,
       collapsed: typeof node.collapsed === "boolean" ? node.collapsed : undefined,
-      important: typeof node.important === "boolean" ? node.important : undefined
+      important: typeof node.important === "boolean" ? node.important : undefined,
+      dimensions: normalizeDimensions(node.dimensions),
+      answerExpansion: normalizeImportedExpansion(node.answerExpansion),
+      topicGroupId: typeof node.topicGroupId === "string" ? node.topicGroupId : undefined,
+      topicGroupMemberIds: Array.isArray(node.topicGroupMemberIds)
+        ? node.topicGroupMemberIds.filter((nodeId) => typeof nodeId === "string")
+        : undefined
     }));
 }
 
@@ -1442,7 +2033,11 @@ function cloneSnapshot(snapshot: GraphSnapshot): GraphSnapshot {
       data: {
         ...node.data,
         tags: node.data.tags ? [...node.data.tags] : undefined,
-        sourceAnchors: sanitizeSourceAnchors(node.data.sourceAnchors)
+        sourceAnchors: sanitizeSourceAnchors(node.data.sourceAnchors),
+        dimensions: node.data.dimensions ? { ...node.data.dimensions } : undefined,
+        answerExpansion: node.data.answerExpansion
+          ? JSON.parse(JSON.stringify(node.data.answerExpansion))
+          : undefined
       }
     })),
     edges: snapshot.edges.map((edge) => ({
@@ -1451,7 +2046,8 @@ function cloneSnapshot(snapshot: GraphSnapshot): GraphSnapshot {
     })),
     hiddenRoot: snapshot.hiddenRoot,
     hiddenAutoEdgeIds: [...snapshot.hiddenAutoEdgeIds],
-    hiddenNodeIds: [...snapshot.hiddenNodeIds]
+    hiddenNodeIds: [...snapshot.hiddenNodeIds],
+    topicGroups: JSON.parse(JSON.stringify(snapshot.topicGroups))
   };
 }
 
@@ -1479,7 +2075,8 @@ function snapshotKey(snapshot: GraphSnapshot): string {
     })),
     hiddenRoot: snapshot.hiddenRoot,
     hiddenAutoEdgeIds: snapshot.hiddenAutoEdgeIds,
-    hiddenNodeIds: snapshot.hiddenNodeIds
+    hiddenNodeIds: snapshot.hiddenNodeIds,
+    topicGroups: snapshot.topicGroups
   });
 }
 
@@ -1496,13 +2093,18 @@ export function TurnMapCanvas({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<TurnNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [selectedRoot, setSelectedRoot] = useState(false);
+  const [selectedMiniNode, setSelectedMiniNode] = useState<{ parentNodeId: string; miniNodeId: string } | null>(null);
   const [highlightedEndpointIds, setHighlightedEndpointIds] = useState<string[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("single");
   const [hiddenRoot, setHiddenRoot] = useState(false);
   const [hiddenAutoEdgeIds, setHiddenAutoEdgeIds] = useState<string[]>([]);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
+  const [topicGroups, setTopicGroups] = useState<TopicGroupRecord[]>([]);
+  const [linkConnectionStyle, setLinkConnectionStyle] = useState<LinkConnectionStyle>("curved");
   const [summarizingNodeIds, setSummarizingNodeIds] = useState<Set<string>>(() => new Set());
+  const [expandingNodeIds, setExpandingNodeIds] = useState<Set<string>>(() => new Set());
   const [pendingSuggestedEdges, setPendingSuggestedEdges] = useState<Edge[]>([]);
   const [suggestingLinks, setSuggestingLinks] = useState(false);
   const [analyzingTopics, setAnalyzingTopics] = useState(false);
@@ -1510,6 +2112,7 @@ export function TurnMapCanvas({
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [tagDraft, setTagDraft] = useState("");
   const [undoStack, setUndoStack] = useState<GraphSnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<GraphSnapshot[]>([]);
   const saveTimer = useRef<number | null>(null);
@@ -1525,14 +2128,31 @@ export function TurnMapCanvas({
   const autoSummarizeRunning = useRef(false);
   const jumpRequestId = useRef(0);
 
+  activeLinkConnectionStyle = linkConnectionStyle;
+
   const selectedEdge = useMemo(
     () => edges.find((edge) => edge.id === selectedEdgeId) ?? null,
     [edges, selectedEdgeId]
+  );
+  const selectedEdges = useMemo(
+    () => edges.filter((edge) => selectedEdgeIds.includes(edge.id)),
+    [edges, selectedEdgeIds]
   );
   const selectedTurnNodes = useMemo(
     () => nodes.filter((node) => node.selected && node.data.turn && !node.data.isConversationRoot),
     [nodes]
   );
+  const selectedActionNodes = useMemo(
+    () => nodes.filter((node) => node.selected && !node.data.isConversationRoot),
+    [nodes]
+  );
+  const selectedMiniNodeContext = useMemo(() => {
+    if (!selectedMiniNode) return null;
+    const parentNode = nodes.find((node) => node.id === selectedMiniNode.parentNodeId);
+    const expansion = parentNode?.data.answerExpansion;
+    const miniNode = expansion?.nodes.find((node) => node.id === selectedMiniNode.miniNodeId);
+    return parentNode && expansion && miniNode ? { parentNode, expansion, miniNode } : null;
+  }, [nodes, selectedMiniNode]);
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
@@ -1552,9 +2172,13 @@ export function TurnMapCanvas({
       ...node,
       className: [node.className, highlighted.has(node.id) ? "is-endpoint-highlight" : ""]
         .filter(Boolean)
-        .join(" ")
+        .join(" "),
+      data: {
+        ...node.data,
+        selectedMiniNodeId: selectedMiniNode?.parentNodeId === node.id ? selectedMiniNode.miniNodeId : undefined
+      }
     }));
-  }, [highlightedEndpointIds, nodes]);
+  }, [highlightedEndpointIds, nodes, selectedMiniNode]);
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -1563,15 +2187,16 @@ export function TurnMapCanvas({
   const currentSnapshot = useCallback(
     (): GraphSnapshot => {
       const snapshot = cloneSnapshot({
-        nodes,
-        edges,
-        hiddenRoot,
-        hiddenAutoEdgeIds,
-        hiddenNodeIds
-      });
-      return snapshot;
-    },
-    [edges, hiddenAutoEdgeIds, hiddenNodeIds, hiddenRoot, nodes]
+      nodes,
+      edges,
+      hiddenRoot,
+      hiddenAutoEdgeIds,
+      hiddenNodeIds,
+      topicGroups
+    });
+    return snapshot;
+  },
+    [edges, hiddenAutoEdgeIds, hiddenNodeIds, hiddenRoot, nodes, topicGroups]
   );
 
   const restoreSnapshot = useCallback(
@@ -1583,6 +2208,7 @@ export function TurnMapCanvas({
       setHiddenRoot(nextSnapshot.hiddenRoot);
       setHiddenAutoEdgeIds(nextSnapshot.hiddenAutoEdgeIds);
       setHiddenNodeIds(nextSnapshot.hiddenNodeIds);
+      setTopicGroups(nextSnapshot.topicGroups);
       setSelectedEdgeId(null);
       setSelectedRoot(false);
       lastHistorySnapshot.current = cloneSnapshot(nextSnapshot);
@@ -1598,18 +2224,104 @@ export function TurnMapCanvas({
       setNodes((currentNodes) =>
         currentNodes.map((node) =>
           node.id === nodeId
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  ...updates
-                }
-              }
+            ? withContentFittingDimensions(node, {
+                ...node.data,
+                ...updates
+              })
             : node
         )
       );
     },
     [setNodes]
+  );
+
+  const updateNodeDimensions = useCallback(
+    (nodeId: string, dimensions: { width: number; height: number; manual: boolean }) => {
+      const normalized = normalizeDimensions(dimensions);
+      if (!normalized) return;
+      setNodes((currentNodes) =>
+        currentNodes.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                style: {
+                  ...node.style,
+                  width: normalized.width,
+                  height: normalized.height
+                },
+                data: {
+                  ...node.data,
+                  dimensions: normalized
+                }
+              }
+            : node
+        )
+      );
+      onStatus?.(t("status.nodeResized"));
+    },
+    [onStatus, setNodes, t]
+  );
+
+  const updateNodeExpansion = useCallback(
+    (nodeId: string, updater: (expansion: AnswerExpansion) => AnswerExpansion) => {
+      setNodes((currentNodes) =>
+        currentNodes.map((node) =>
+          node.id === nodeId && node.data.answerExpansion
+            ? withContentFittingDimensions(node, {
+                ...node.data,
+                answerExpansion: updater(node.data.answerExpansion)
+              })
+            : node
+        )
+      );
+    },
+    [setNodes]
+  );
+
+  const updateMiniNodeInExpansion = useCallback(
+    (nodeId: string, miniNodeId: string, updates: Partial<Pick<AnswerMiniNode, "title" | "color" | "important">>) => {
+      updateNodeExpansion(nodeId, (expansion) => updateMiniNode(expansion, miniNodeId, updates));
+    },
+    [updateNodeExpansion]
+  );
+
+  const selectMiniNode = useCallback(
+    (parentNodeId: string, miniNodeId: string) => {
+      setSelectedMiniNode({ parentNodeId, miniNodeId });
+      setSelectedEdgeId(null);
+      setSelectedEdgeIds([]);
+      setSelectedRoot(false);
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => ({
+          ...node,
+          selected: node.id === parentNodeId
+        }))
+      );
+    },
+    [setNodes]
+  );
+
+  const deleteMiniNodeFromExpansion = useCallback(
+    (nodeId: string, miniNodeId: string) => {
+      const expansion = nodesRef.current.find((candidate) => candidate.id === nodeId)?.data.answerExpansion;
+      const miniNode = expansion?.nodes.find((candidate) => candidate.id === miniNodeId);
+      const deleteCount = expansion ? miniNodeDescendantIds(expansion, miniNodeId).length : 1;
+      if (
+        expansion &&
+        miniNode &&
+        (miniNode.role === "branch" || deleteCount >= 5) &&
+        !window.confirm(t("app.confirm.deleteMiniSubtree", { count: deleteCount }))
+      ) {
+        return;
+      }
+      updateNodeExpansion(nodeId, (expansion) => deleteMiniNode(expansion, miniNodeId));
+      setSelectedMiniNode(null);
+      const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
+      if ((node?.data.answerExpansion?.nodes.length ?? 0) <= 2) {
+        onStatus?.(t("expansion.emptyGuidance"));
+      }
+    },
+    [onStatus, t, updateNodeExpansion]
   );
 
   const reportApiTask = useCallback(
@@ -1624,6 +2336,65 @@ export function TurnMapCanvas({
       void onTaskStatus?.(entry);
     },
     [onStatus, onTaskStatus]
+  );
+
+  const reportGraphHealthIssues = useCallback(
+    (stage: string, issues: GraphIssue[]) => {
+      if (issues.length === 0) return;
+      const summary = graphIssuesSummary(issues);
+      const hasFatal = summary.fatal > 0;
+      reportApiTask({
+        id: `graph-health-${conversationId}-${stage}`,
+        kind: "graph-health",
+        status: hasFatal ? "error" : "success",
+        message: t("task.graphHealthDone", {
+          corrected: summary.corrected,
+          dropped: summary.dropped,
+          fatal: summary.fatal
+        }),
+        progress: 100
+      });
+    },
+    [conversationId, reportApiTask, t]
+  );
+
+  const healthyGraphSnapshot = useCallback(
+    (stage: string, snapshotNodes: Node<TurnNodeData>[], snapshotEdges: Edge[]) => {
+      const repaired = repairGraphSnapshot({ nodes: snapshotNodes, edges: snapshotEdges.map((edge) => applyEdgeStyle(edge)) });
+      reportGraphHealthIssues(stage, repaired.issues);
+      return repaired;
+    },
+    [reportGraphHealthIssues]
+  );
+
+  const expansionDirectionForNode = useCallback(
+    (_node: Node<TurnNodeData>): MiniMapLayoutDirection => "right",
+    []
+  );
+
+  const reportAnswerExpansionProgress = useCallback(
+    (taskId: string, stage: AnswerExpansionProgressStage) => {
+      const progressByStage: Record<AnswerExpansionProgressStage, number> = {
+        prepare: 12,
+        outline: 28,
+        request: 55,
+        validate: 78
+      };
+      const messageKeyByStage: Record<AnswerExpansionProgressStage, I18nKey> = {
+        prepare: "task.expandAnswerPreparing",
+        outline: "task.expandAnswerOutline",
+        request: "task.expandAnswerRequesting",
+        validate: "task.expandAnswerValidating"
+      };
+      reportApiTask({
+        id: taskId,
+        kind: "expand-answer",
+        status: "running",
+        message: t(messageKeyByStage[stage]),
+        progress: progressByStage[stage]
+      });
+    },
+    [reportApiTask, t]
   );
 
   const jumpToNodeTurn = useCallback(
@@ -1686,6 +2457,35 @@ export function TurnMapCanvas({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const applyConnectionStyle = (style: LinkConnectionStyle) => {
+      activeLinkConnectionStyle = style;
+      setLinkConnectionStyle(style);
+      setEdges((currentEdges) => currentEdges.map((edge) => applyEdgeStyle(edge, style)));
+      setPendingSuggestedEdges((currentEdges) => currentEdges.map((edge) => applyEdgeStyle(edge, style)));
+    };
+
+    const refreshConnectionStyle = () => {
+      void loadUiSettings().then((settings) => {
+        if (!cancelled) applyConnectionStyle(settings.linkConnectionStyle);
+      });
+    };
+
+    refreshConnectionStyle();
+    const listener = (_changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+      if (areaName === "local" && UI_SETTINGS_STORAGE_KEYS.some((key) => key in _changes)) {
+        refreshConnectionStyle();
+      }
+    };
+    chrome.storage.onChanged.addListener(listener);
+
+    return () => {
+      cancelled = true;
+      chrome.storage.onChanged.removeListener(listener);
+    };
+  }, [setEdges]);
+
   const summarizeNode = useCallback(
     async (nodeId: string) => {
       const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
@@ -1739,22 +2539,16 @@ export function TurnMapCanvas({
               const protectedSummary = applyProtectedTurnSummary(currentNode.data, summary);
               blocked = protectedSummary.blocked;
               if (protectedSummary.blocked) return currentNode;
-              return {
-                ...currentNode,
-                data: {
-                  ...currentNode.data,
-                  ...protectedSummary.updates
-                }
-              };
-            }
-            return {
-              ...currentNode,
-              data: {
+              return withContentFittingDimensions(currentNode, {
                 ...currentNode.data,
-                title: summary.title,
-                summary: summary.summary
-              }
-            };
+                ...protectedSummary.updates
+              });
+            }
+            return withContentFittingDimensions(currentNode, {
+              ...currentNode.data,
+              title: summary.title,
+              summary: summary.summary
+            });
           })
         );
         reportApiTask({
@@ -1786,6 +2580,171 @@ export function TurnMapCanvas({
     },
     [conversationId, reportApiTask, setNodes, t, turns]
   );
+
+  const expandNodeAnswer = useCallback(
+    async (nodeId: string, replaceExisting = false) => {
+      const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
+      if (!node?.data.turn || node.data.isConversationRoot) return;
+      if (node.data.answerExpansion && !replaceExisting) {
+        setNodes((currentNodes) =>
+          currentNodes.map((currentNode) =>
+            currentNode.id === nodeId && currentNode.data.answerExpansion
+              ? withContentFittingDimensions(currentNode, {
+                  ...currentNode.data,
+                  answerExpansion: {
+                    ...currentNode.data.answerExpansion,
+                    displayMode: "expanded",
+                    updatedAt: new Date().toISOString()
+                  }
+                })
+              : currentNode
+          )
+        );
+        return;
+      }
+      if (replaceExisting && node.data.answerExpansion && !window.confirm(t("app.confirm.reexpandAnswer"))) {
+        return;
+      }
+
+      const taskId = `expand-answer-${conversationId}-${nodeId}`;
+      setExpandingNodeIds((currentIds) => new Set(currentIds).add(nodeId));
+      reportApiTask({
+        id: taskId,
+        kind: "expand-answer",
+        status: "running",
+        message: t("task.expandAnswer"),
+        progress: 10
+      });
+
+      try {
+        const direction = expansionDirectionForNode(node);
+        const expansion = {
+          ...(await expandTurnAnswer(node.data.turn, node.data.summary, {
+            onProgress: (stage) => reportAnswerExpansionProgress(taskId, stage)
+          })),
+          layoutDirection: direction,
+          updatedAt: new Date().toISOString()
+        } satisfies AnswerExpansion;
+        reportApiTask({
+          id: taskId,
+          kind: "expand-answer",
+          status: "running",
+          message: t("task.expandAnswerLayout"),
+          progress: 90
+        });
+        const targetDimensions = expandedContentDimensions(expansion);
+        setNodes((currentNodes) =>
+          currentNodes.map((currentNode) =>
+            currentNode.id === nodeId
+              ? (() => {
+                  const previousWidth = Number(currentNode.style?.width ?? currentNode.data.dimensions?.width ?? 300);
+                  const width = replaceExisting ? targetDimensions.width : Math.max(previousWidth, targetDimensions.width);
+                  const height = targetDimensions.height;
+                  return {
+                    ...currentNode,
+                    position:
+                      direction === "left"
+                        ? {
+                            ...currentNode.position,
+                            x: currentNode.position.x - Math.max(0, width - previousWidth)
+                          }
+                        : currentNode.position,
+                    style: {
+                      ...currentNode.style,
+                      width,
+                      height
+                    },
+                    data: {
+                      ...currentNode.data,
+                      dimensions: {
+                        width,
+                        height,
+                        manual: false
+                      },
+                      answerExpansion: expansion
+                    }
+                  };
+                })()
+              : currentNode
+          )
+        );
+        window.setTimeout(() => {
+          flowInstance.current?.fitView({ nodes: [{ id: nodeId }], padding: 0.18, duration: 300 });
+        }, 80);
+        reportApiTask({
+          id: taskId,
+          kind: "expand-answer",
+          status: "success",
+          message: t("task.expandAnswerDone"),
+          progress: 100
+        });
+      } catch (error) {
+        reportApiTask({
+          id: taskId,
+          kind: "expand-answer",
+          status: "error",
+          message: error instanceof Error ? error.message : t("task.expandAnswerFailed"),
+          progress: 100
+        });
+        onStatus?.(t("task.expandAnswerFailed"));
+      } finally {
+        setExpandingNodeIds((currentIds) => {
+          const nextIds = new Set(currentIds);
+          nextIds.delete(nodeId);
+          return nextIds;
+        });
+      }
+    },
+    [
+      conversationId,
+      expansionDirectionForNode,
+      onStatus,
+      reportAnswerExpansionProgress,
+      reportApiTask,
+      setNodes,
+      t
+    ]
+  );
+
+  const setSelectedNodeExpansionMode = useCallback(
+    (displayMode: "expanded" | "original") => {
+      const nodeId = selectedTurnNodes[0]?.id;
+      if (!nodeId) return;
+      setNodes((currentNodes) =>
+        currentNodes.map((node) =>
+          node.id === nodeId && node.data.answerExpansion
+            ? withContentFittingDimensions(node, {
+                ...node.data,
+                collapsed: false,
+                answerExpansion: {
+                  ...node.data.answerExpansion,
+                  displayMode,
+                  updatedAt: new Date().toISOString()
+                }
+              })
+            : node
+        )
+      );
+    },
+    [selectedTurnNodes, setNodes]
+  );
+
+  const deleteSelectedNodeExpansion = useCallback(() => {
+    const nodeId = selectedTurnNodes[0]?.id;
+    if (!nodeId || !window.confirm(t("app.confirm.deleteExpansion"))) return;
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.id === nodeId
+          ? withContentFittingDimensions(node, {
+                ...node.data,
+                collapsed: false,
+                answerExpansion: undefined
+              })
+          : node
+      )
+    );
+    onStatus?.(t("status.expansionDeleted"));
+  }, [onStatus, selectedTurnNodes, setNodes, t]);
 
   const summarizeAllNodes = useCallback(async () => {
     if (summarizingNodeIds.size > 0) return;
@@ -1819,13 +2778,10 @@ export function TurnMapCanvas({
                   const protectedSummary = applyProtectedTurnSummary(node.data, summary);
                   if (protectedSummary.blocked) return node;
                   updated = true;
-                  return {
-                    ...node,
-                    data: {
-                      ...node.data,
-                      ...protectedSummary.updates
-                    }
-                  };
+                  return withContentFittingDimensions(node, {
+                    ...node.data,
+                    ...protectedSummary.updates
+                  });
                 })()
               : node
           )
@@ -1886,11 +2842,15 @@ export function TurnMapCanvas({
 
     Promise.all([
       shouldRebuild ? resetStoredGraph(conversationId).then(() => null) : loadStoredGraph(conversationId),
-      loadDefaultLayout()
+      loadDefaultLayout(),
+      loadUiSettings()
     ]).then(
-      ([storedGraph, defaultLayout]) => {
+      ([storedGraph, defaultLayout, uiSettings]) => {
       if (cancelled) return;
 
+      const activeConnectionStyle = uiSettings.linkConnectionStyle;
+      activeLinkConnectionStyle = activeConnectionStyle;
+      setLinkConnectionStyle(activeConnectionStyle);
       const activeLayout = shouldRebuild ? defaultLayout : (storedGraph?.layoutMode ?? defaultLayout);
       const activeHiddenRoot = shouldRebuild ? false : (storedGraph?.hiddenRoot ?? false);
       const storedNodeOverrides = shouldRebuild ? {} : (storedGraph?.nodeOverrides ?? {});
@@ -1901,6 +2861,7 @@ export function TurnMapCanvas({
       const activeHiddenNodeIds = shouldRebuild
         ? []
         : remapNodeIds(storedGraph?.hiddenNodeIds ?? [], storedTurnIdMap);
+      const activeTopicGroups = shouldRebuild ? [] : (storedGraph?.topicGroups ?? []);
       const storedPositions =
         !shouldRebuild && storedGraph?.schemaVersion && storedGraph.schemaVersion >= 2
           ? remapRecordKeys(storedGraph.positions, storedTurnIdMap)
@@ -1911,12 +2872,13 @@ export function TurnMapCanvas({
       setHiddenRoot(activeHiddenRoot);
       setHiddenAutoEdgeIds(activeHiddenAutoEdgeIds);
       setHiddenNodeIds(activeHiddenNodeIds);
+      setTopicGroups(activeTopicGroups);
       const autoEdges = autoEdgesFromTurns(
         turns,
         activeLayout,
         activeHiddenRoot,
         activeHiddenAutoEdgeIds
-      );
+      ).map((edge) => applyEdgeStyle(edge, activeConnectionStyle));
       const nodeIds = new Set([
         ...(activeLayout === "list" || activeHiddenRoot ? [] : ["conversation-root"]),
         ...turns.filter((turn) => !activeHiddenNodeIds.includes(turn.id)).map((turn) => turn.id),
@@ -1941,7 +2903,7 @@ export function TurnMapCanvas({
         activeLayout,
         activeHiddenRoot
       );
-      const nextEdges = [...autoEdges, ...validUserEdges.map(applyEdgeStyle)];
+      const nextEdges = [...autoEdges, ...validUserEdges.map((edge) => applyEdgeStyle(edge, activeConnectionStyle))];
       setNodes(nextNodes);
       setEdges(nextEdges);
       setSelectedEdgeId((edgeId) =>
@@ -1955,7 +2917,8 @@ export function TurnMapCanvas({
         edges: nextEdges,
         hiddenRoot: activeHiddenRoot,
         hiddenAutoEdgeIds: activeHiddenAutoEdgeIds,
-        hiddenNodeIds: activeHiddenNodeIds
+        hiddenNodeIds: activeHiddenNodeIds,
+        topicGroups: activeTopicGroups
       });
       loadedConversationId.current = loadingConversationId;
       if (shouldRebuild) {
@@ -2002,11 +2965,12 @@ export function TurnMapCanvas({
           layoutMode,
           hiddenRoot,
           hiddenAutoEdgeIds,
-          hiddenNodeIds
+          hiddenNodeIds,
+          topicGroups
         );
       }, 250);
     },
-    [conversationId, hiddenAutoEdgeIds, hiddenNodeIds, hiddenRoot, layoutMode, turns]
+    [conversationId, hiddenAutoEdgeIds, hiddenNodeIds, hiddenRoot, layoutMode, topicGroups, turns]
   );
 
   useEffect(() => {
@@ -2017,11 +2981,24 @@ export function TurnMapCanvas({
           ...node.data,
           onSummarize: summarizeNode,
           onJump: jumpToNodeTurn,
+          onResize: updateNodeDimensions,
+          onMiniNodeUpdate: updateMiniNodeInExpansion,
+          onMiniNodeDelete: deleteMiniNodeFromExpansion,
+          onMiniNodeSelect: selectMiniNode,
           isSummarizing: summarizingNodeIds.has(node.id)
         }
       }))
     );
-  }, [jumpToNodeTurn, setNodes, summarizeNode, summarizingNodeIds]);
+  }, [
+    deleteMiniNodeFromExpansion,
+    jumpToNodeTurn,
+    setNodes,
+    selectMiniNode,
+    summarizeNode,
+    summarizingNodeIds,
+    updateMiniNodeInExpansion,
+    updateNodeDimensions
+  ]);
 
   useEffect(() => {
     if (nodes.length === 0) return;
@@ -2050,7 +3027,7 @@ export function TurnMapCanvas({
       setRedoStack([]);
       lastHistorySnapshot.current = cloneSnapshot(snapshot);
     }, 450);
-  }, [currentSnapshot, edges, hiddenAutoEdgeIds, hiddenNodeIds, hiddenRoot, nodes]);
+  }, [currentSnapshot, edges, hiddenAutoEdgeIds, hiddenNodeIds, hiddenRoot, nodes, topicGroups]);
 
   useEffect(() => {
     if (!autoSummarize || autoSummarizeRunning.current) return;
@@ -2090,13 +3067,10 @@ export function TurnMapCanvas({
               const protectedSummary = applyProtectedTurnSummary(currentNode.data, summary);
               if (protectedSummary.blocked) return currentNode;
               updated = true;
-              return {
-                ...currentNode,
-                data: {
-                  ...currentNode.data,
-                  ...protectedSummary.updates
-                }
-              };
+              return withContentFittingDimensions(currentNode, {
+                ...currentNode.data,
+                ...protectedSummary.updates
+              });
             })
           );
           if (updated) {
@@ -2149,29 +3123,39 @@ export function TurnMapCanvas({
     (connection: Connection) => {
       setEdges((currentEdges) =>
         addEdge(
-          {
+          applyEdgeStyle({
             ...connection,
             animated: false,
             label: "related",
             id: `user-${connection.source}-${connection.target}-${Date.now()}`,
             data: {
               relationship: "related",
-              important: false
+              important: false,
+              weight: DEFAULT_USER_EDGE_WEIGHT,
+              createdBy: "user"
             } satisfies RelationshipEdgeData,
-            style: relationshipStyle("related")
-          },
+            style: relationshipStyle("related", false, DEFAULT_USER_EDGE_WEIGHT)
+          }, linkConnectionStyle),
           currentEdges
         )
       );
     },
-    [setEdges]
+    [linkConnectionStyle, setEdges]
   );
 
   const onEdgeClick = useCallback<EdgeMouseHandler>(
     (event, edge) => {
       event.stopPropagation();
+      setSelectedMiniNode(null);
       setSelectedRoot(false);
       setSelectedEdgeId(edge.id);
+      setSelectedEdgeIds((currentIds) =>
+        event.ctrlKey || event.metaKey || event.shiftKey
+          ? currentIds.includes(edge.id)
+            ? currentIds.filter((id) => id !== edge.id)
+            : [...currentIds, edge.id]
+          : [edge.id]
+      );
       setHighlightedEndpointIds([]);
     },
     []
@@ -2181,8 +3165,10 @@ export function TurnMapCanvas({
     (event, edge) => {
       event.preventDefault();
       event.stopPropagation();
+      setSelectedMiniNode(null);
       setSelectedRoot(false);
       setSelectedEdgeId(edge.id);
+      setSelectedEdgeIds([edge.id]);
       setHighlightedEndpointIds([edge.source, edge.target]);
       onStatus?.("Highlighted linked nodes");
     },
@@ -2208,12 +3194,14 @@ export function TurnMapCanvas({
 
           const currentData = (edge.data as RelationshipEdgeData | undefined) ?? {
             relationship: isAutoEdge(edge) ? "references" : "related",
-            important: false
+            important: false,
+            weight: isAutoEdge(edge) ? DEFAULT_AUTO_SEQUENCE_EDGE_WEIGHT : DEFAULT_USER_EDGE_WEIGHT
           };
           const nextData: RelationshipEdgeData = {
             ...currentData,
             relationship: updates.relationship ?? currentData.relationship,
-            important: updates.important ?? currentData.important
+            important: updates.important ?? currentData.important,
+            weight: updates.weight != null ? normalizeEdgeWeight(updates.weight) : normalizeEdgeWeight(currentData.weight)
           };
 
           return applyEdgeStyle({
@@ -2221,17 +3209,60 @@ export function TurnMapCanvas({
             id: selectedIsAutoEdge ? nextSelectedEdgeId : edge.id,
             data: nextData,
             label: updates.label ?? edge.label
-          });
+          }, linkConnectionStyle);
         })
       );
     },
-    [selectedEdge, selectedEdgeId, setEdges]
+    [linkConnectionStyle, selectedEdge, selectedEdgeId, setEdges]
+  );
+
+  const updateSelectedEdges = useCallback(
+    (updates: Partial<RelationshipEdgeData>) => {
+      if (selectedEdges.length < 2) return;
+      const selectedIds = new Set(selectedEdges.map((edge) => edge.id));
+      const convertedIds = new Map<string, string>();
+      selectedEdges.forEach((edge) => {
+        if (isAutoEdge(edge)) {
+          convertedIds.set(edge.id, `user-${edge.id}`);
+        }
+      });
+      if (convertedIds.size > 0) {
+        setHiddenAutoEdgeIds((currentIds) => [...new Set([...currentIds, ...convertedIds.keys()])]);
+      }
+      setEdges((currentEdges) =>
+        currentEdges.map((edge) => {
+          if (!selectedIds.has(edge.id)) return edge;
+          const currentData = (edge.data as RelationshipEdgeData | undefined) ?? {
+            relationship: isAutoEdge(edge) ? "references" : "related",
+            important: false,
+            weight: isAutoEdge(edge) ? DEFAULT_AUTO_SEQUENCE_EDGE_WEIGHT : DEFAULT_USER_EDGE_WEIGHT
+          };
+          return applyEdgeStyle({
+            ...edge,
+            id: convertedIds.get(edge.id) ?? edge.id,
+            data: {
+              ...currentData,
+              relationship: updates.relationship ?? currentData.relationship,
+              important: updates.important ?? currentData.important,
+              weight: updates.weight != null ? normalizeEdgeWeight(updates.weight) : normalizeEdgeWeight(currentData.weight)
+            } satisfies RelationshipEdgeData
+          }, linkConnectionStyle);
+        })
+      );
+      const nextIds = selectedEdges.map((edge) => convertedIds.get(edge.id) ?? edge.id);
+      setSelectedEdgeIds(nextIds);
+      setSelectedEdgeId(null);
+      onStatus?.(t("status.linksUpdated", { count: selectedEdges.length }));
+    },
+    [linkConnectionStyle, onStatus, selectedEdges, setEdges, t]
   );
 
   const onNodeClick = useCallback(
     (event: React.MouseEvent, node: Node<TurnNodeData>) => {
       const multiSelect = event.ctrlKey || event.metaKey || event.shiftKey;
+      setSelectedMiniNode(null);
       setSelectedEdgeId(null);
+      setSelectedEdgeIds([]);
       setHighlightedEndpointIds([]);
 
       if (node.data.isConversationRoot) {
@@ -2272,6 +3303,7 @@ export function TurnMapCanvas({
 
     setEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== selectedEdge.id));
     setSelectedEdgeId(null);
+    setSelectedEdgeIds([]);
   }, [selectedEdge, setEdges]);
 
   const deleteRoot = useCallback(() => {
@@ -2339,7 +3371,7 @@ export function TurnMapCanvas({
           seen.add(key);
           return true;
         })
-        .map(applyEdgeStyle);
+        .map((edge) => applyEdgeStyle(edge));
     });
     setSelectedEdgeId(null);
     setSelectedRoot(false);
@@ -2348,6 +3380,15 @@ export function TurnMapCanvas({
 
   const collapseSelectedAsTopic = useCallback(() => {
     if (selectedTurnNodes.length < 2) return;
+    if (
+      topicGroupHasNestedSelection({
+        selectedNodeIds: selectedTurnNodes.map((node) => node.id),
+        topicGroups
+      })
+    ) {
+      onStatus?.(t("status.topicNestedRejected"));
+      return;
+    }
 
     const topic = buildCollapsedTopic({
       selectedNodes: selectedTurnNodes.map((node) => ({
@@ -2355,13 +3396,52 @@ export function TurnMapCanvas({
         title: node.data.title,
         summary: node.data.summary,
         position: node.position,
-        turnIndex: node.data.turn?.turnIndex
+        turnIndex: node.data.turn?.turnIndex,
+        tags: node.data.tags
       }))
     });
     const sourceIds = new Set(topic.hiddenNodeIds);
-    const hasRoot = nodes.some((node) => node.id === "conversation-root");
     const sourceAnchors = mergedSourceAnchorsForNodes(selectedTurnNodes);
+    const groupRecord = buildTopicGroupRecord({
+      topic,
+      selectedNodes: selectedTurnNodes.map((node) => ({
+        id: node.id,
+        title: node.data.title,
+        summary: node.data.summary,
+        position: node.position,
+        turnIndex: node.data.turn?.turnIndex,
+        tags: node.data.tags,
+        status: node.data.status,
+        color: node.data.color,
+        collapsed: node.data.collapsed,
+        important: node.data.important
+      })),
+      edges: edges.map(topicEdgeSnapshot)
+    });
+    const proxyEdges = buildTopicProxyEdges({
+      topicNodeId: topic.id,
+      topicGroupId: groupRecord.id,
+      memberNodeIds: topic.hiddenNodeIds,
+      edges: edges.map(topicEdgeSnapshot)
+    }).map((edge) =>
+      applyEdgeStyle({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        label: typeof edge.label === "string" ? edge.label : undefined,
+        data: {
+          ...((edge.data as RelationshipEdgeData | undefined) ?? { relationship: "related" }),
+          originalEdgeId: edge.originalEdgeId,
+          proxyKind: edge.proxyKind,
+          topicGroupId: edge.topicGroupId,
+          weight: edge.weight,
+          createdBy: "user",
+          reason: "Collapsed topic group"
+        } satisfies RelationshipEdgeData
+      })
+    );
 
+    setTopicGroups((currentGroups) => [...currentGroups, groupRecord]);
     setHiddenNodeIds((currentIds) => [...new Set([...currentIds, ...topic.hiddenNodeIds])]);
     setNodes((currentNodes) => [
       ...currentNodes
@@ -2379,6 +3459,8 @@ export function TurnMapCanvas({
           status: "review",
           tags: topic.tags,
           sourceAnchors,
+          topicGroupId: groupRecord.id,
+          topicGroupMemberIds: topic.hiddenNodeIds,
           onUpdate: updateNodeText
         }
       }
@@ -2387,27 +3469,85 @@ export function TurnMapCanvas({
       const keptEdges = currentEdges.filter(
         (edge) => !sourceIds.has(edge.source) && !sourceIds.has(edge.target)
       );
-      if (!hasRoot || hiddenRoot) return keptEdges.map(applyEdgeStyle);
-      return [
-        ...keptEdges,
-        applyEdgeStyle({
-          id: `user-conversation-root-${topic.id}`,
-          source: "conversation-root",
-          target: topic.id,
-          label: "topic",
-          data: {
-            relationship: "references",
-            important: true,
-            createdBy: "user",
-            reason: "Collapsed topic group"
-          } satisfies RelationshipEdgeData
-        })
-      ];
+      return [...keptEdges, ...proxyEdges].map((edge) => applyEdgeStyle(edge));
     });
     setSelectedEdgeId(null);
     setSelectedRoot(false);
-    onStatus?.(`Collapsed ${topic.hiddenNodeIds.length} turns into a topic`);
-  }, [hiddenRoot, nodes, onStatus, selectedTurnNodes, setEdges, setNodes, updateNodeText]);
+    onStatus?.(t("status.topicCollapsed", { count: topic.hiddenNodeIds.length }));
+  }, [edges, onStatus, selectedTurnNodes, setEdges, setNodes, t, topicGroups, updateNodeText]);
+
+  const expandTopicGroup = useCallback(
+    (groupId: string) => {
+      const group = topicGroups.find((candidate) => candidate.id === groupId);
+      if (!group) return;
+      const memberIds = new Set(group.memberNodeIds);
+      const snapshotById = new Map(group.nodeSnapshots.map((node) => [node.id, node]));
+      const restoredNodes: Node<TurnNodeData>[] = group.memberNodeIds.map((nodeId) => {
+        const snapshot = snapshotById.get(nodeId);
+        const turn = turns.find((candidate) => candidate.id === nodeId);
+        const title = snapshot?.title ?? (turn ? titleFromTurn(turn) : nodeId);
+        const summary = snapshot?.summary ?? (turn ? summaryFromTurn(turn) : "");
+        return {
+          id: nodeId,
+          type: "turnNode",
+          dragHandle: ".turn-node__drag-handle",
+          position: snapshot?.position ?? { x: 0, y: 0 },
+          selected: true,
+          style: nodeDimensionsStyle(undefined, { width: 280, height: 220 }),
+          data: {
+            title,
+            summary,
+            turn,
+            status: snapshot?.status,
+            tags: normalizeNodeTags(snapshot?.tags),
+            color: isNodeColorName(snapshot?.color) ? snapshot.color : undefined,
+            collapsed: snapshot?.collapsed,
+            important: snapshot?.important,
+            sourceAnchors: turn?.sourceAnchor ? [turn.sourceAnchor] : undefined,
+            onUpdate: updateNodeText,
+            onSummarize: summarizeNode,
+            onJump: jumpToNodeTurn
+          }
+        };
+      });
+
+      setTopicGroups((currentGroups) => currentGroups.filter((candidate) => candidate.id !== groupId));
+      setHiddenNodeIds((currentIds) => currentIds.filter((nodeId) => !memberIds.has(nodeId)));
+      setNodes((currentNodes) => [
+        ...currentNodes
+          .filter((node) => node.id !== group.topicNodeId && !memberIds.has(node.id))
+          .map((node) => ({ ...node, selected: false })),
+        ...restoredNodes
+      ]);
+      setEdges((currentEdges) => {
+        const existingIds = new Set<string>();
+        const keptEdges = currentEdges
+          .filter((edge) => edge.source !== group.topicNodeId && edge.target !== group.topicNodeId)
+          .filter((edge) => !isTopicProxyEdge(edge))
+          .map((edge) => {
+            existingIds.add(edge.id);
+            return edge;
+          });
+        const restoredEdges = group.edgeSnapshots
+          .filter((edge) => !existingIds.has(edge.id))
+          .map((edge) =>
+            applyEdgeStyle({
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              label: typeof edge.label === "string" ? edge.label : undefined,
+              data: edge.data as Edge["data"]
+            })
+          );
+        return [...keptEdges, ...restoredEdges];
+      });
+      setSelectedEdgeId(null);
+      setSelectedEdgeIds([]);
+      setSelectedRoot(false);
+      onStatus?.(t("status.topicExpanded", { count: group.memberNodeIds.length }));
+    },
+    [jumpToNodeTurn, onStatus, setEdges, setNodes, summarizeNode, t, topicGroups, turns, updateNodeText]
+  );
 
   const duplicateSelectedNodeAsNote = useCallback(() => {
     const sourceNode = selectedTurnNodes[0];
@@ -2532,10 +3672,14 @@ export function TurnMapCanvas({
     [onStatus, selectedTurnNodes, setNodes]
   );
 
+  const selectedTagUnion = useMemo(
+    () => [...new Set(selectedTurnNodes.flatMap((node) => node.data.tags ?? []))].sort(),
+    [selectedTurnNodes]
+  );
+
   const addBulkTag = useCallback(() => {
-    const tag = window.prompt("Tag for selected nodes");
-    if (!tag?.trim() || selectedTurnNodes.length === 0) return;
-    const cleanTag = tag.trim().slice(0, 32);
+    if (!tagDraft.trim() || selectedTurnNodes.length === 0) return;
+    const cleanTag = tagDraft.trim().slice(0, 32);
     const selectedIds = new Set(selectedTurnNodes.map((node) => node.id));
     setNodes((currentNodes) =>
       currentNodes.map((node) =>
@@ -2550,8 +3694,31 @@ export function TurnMapCanvas({
           : node
       )
     );
-    onStatus?.(`Tagged ${selectedTurnNodes.length} nodes`);
-  }, [onStatus, selectedTurnNodes, setNodes]);
+    setTagDraft("");
+    onStatus?.(t("status.tagAdded", { count: selectedTurnNodes.length }));
+  }, [onStatus, selectedTurnNodes, setNodes, t, tagDraft]);
+
+  const removeBulkTag = useCallback(
+    (tag: string) => {
+      if (!tag || selectedTurnNodes.length === 0) return;
+      const selectedIds = new Set(selectedTurnNodes.map((node) => node.id));
+      setNodes((currentNodes) =>
+        currentNodes.map((node) =>
+          selectedIds.has(node.id)
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  tags: normalizeNodeTags((node.data.tags ?? []).filter((currentTag) => currentTag !== tag))
+                }
+              }
+            : node
+        )
+      );
+      onStatus?.(t("status.tagRemoved", { tag, count: selectedTurnNodes.length }));
+    },
+    [onStatus, selectedTurnNodes, setNodes, t]
+  );
 
   const updateSelectedNodeAppearance = useCallback(
     (updates: Pick<Partial<TurnNodeData>, "color" | "collapsed" | "important">) => {
@@ -2577,9 +3744,19 @@ export function TurnMapCanvas({
   const toggleSelectedNodeCollapsed = useCallback(() => {
     if (selectedTurnNodes.length === 0) return;
     const shouldCollapse = selectedTurnNodes.some((node) => !node.data.collapsed);
-    updateSelectedNodeAppearance({ collapsed: shouldCollapse });
+    const selectedIds = new Set(selectedTurnNodes.map((node) => node.id));
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => {
+        if (!selectedIds.has(node.id)) return node;
+        return withContentFittingDimensions(node, {
+          ...node.data,
+          collapsed: shouldCollapse,
+          dimensions: shouldCollapse || isAutoCollapsedDimensions(node.data.dimensions) ? undefined : node.data.dimensions
+        });
+      })
+    );
     onStatus?.(shouldCollapse ? t("status.nodesCollapsed") : t("status.nodesExpanded"));
-  }, [onStatus, selectedTurnNodes, t, updateSelectedNodeAppearance]);
+  }, [onStatus, selectedTurnNodes, setNodes, t]);
 
   const toggleSelectedNodeImportant = useCallback(() => {
     if (selectedTurnNodes.length === 0) return;
@@ -2667,7 +3844,7 @@ export function TurnMapCanvas({
         message: t("task.suggestLinksRequesting"),
         progress: 45
       });
-      const suggestedEdges = (await suggestSemanticEdges(nodes)).map(applyEdgeStyle);
+      const suggestedEdges = (await suggestSemanticEdges(nodes)).map((edge) => applyEdgeStyle(edge));
       reportApiTask({
         id: taskId,
         kind: "suggest-links",
@@ -2739,6 +3916,7 @@ export function TurnMapCanvas({
               data: {
                 relationship: candidate.relationship,
                 confidence: candidate.confidence,
+                weight: weightFromConfidence(candidate.confidence, DEFAULT_TOPIC_ANALYSIS_EDGE_WEIGHT),
                 reason: candidate.reason,
                 createdBy: "topic-analysis"
               } satisfies RelationshipEdgeData
@@ -2777,7 +3955,8 @@ export function TurnMapCanvas({
           if (edge.id !== edgeId) return edge;
           const currentData = (edge.data as RelationshipEdgeData | undefined) ?? {
             relationship: "related",
-            important: false
+            important: false,
+            weight: DEFAULT_AI_EDGE_WEIGHT
           };
 
           return applyEdgeStyle({
@@ -2786,7 +3965,8 @@ export function TurnMapCanvas({
             data: {
               ...currentData,
               relationship: updates.relationship ?? currentData.relationship,
-              important: updates.important ?? currentData.important
+              important: updates.important ?? currentData.important,
+              weight: updates.weight != null ? normalizeEdgeWeight(updates.weight) : normalizeEdgeWeight(currentData.weight)
             } satisfies RelationshipEdgeData
           });
         })
@@ -2853,18 +4033,20 @@ export function TurnMapCanvas({
   const exportJson = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.json`;
     const appearance = await loadExportAppearance();
+    const healthy = healthyGraphSnapshot("export-json", nodes, edges);
     downloadTextFile(
       filename,
       serializeGraph(
         conversationId,
         conversationTitle,
         turns,
-        nodes,
-        edges,
+        healthy.nodes,
+        healthy.edges,
         layoutMode,
         hiddenRoot,
         hiddenAutoEdgeIds,
         hiddenNodeIds,
+        topicGroups,
         appearance
       ),
       "application/json"
@@ -2877,9 +4059,11 @@ export function TurnMapCanvas({
     hiddenAutoEdgeIds,
     hiddenNodeIds,
     hiddenRoot,
+    healthyGraphSnapshot,
     layoutMode,
     nodes,
     onStatus,
+    topicGroups,
     turns,
     t
   ]);
@@ -2891,9 +4075,10 @@ export function TurnMapCanvas({
 
   const exportMarkdown = useCallback(() => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.md`;
-    downloadTextFile(filename, markdown, "text/markdown;charset=utf-8");
+    const healthy = healthyGraphSnapshot("export-markdown", nodes, edges);
+    downloadTextFile(filename, graphToMarkdown(conversationTitle, turns, healthy.nodes, healthy.edges), "text/markdown;charset=utf-8");
     onStatus?.(t("file.exported", { filename }));
-  }, [conversationTitle, markdown, onStatus, t]);
+  }, [conversationTitle, edges, healthyGraphSnapshot, nodes, onStatus, t, turns]);
 
   const copyMarkdown = useCallback(async () => {
     try {
@@ -2907,55 +4092,60 @@ export function TurnMapCanvas({
   const exportObsidianCanvas = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.canvas`;
     const appearance = await loadExportAppearance();
+    const healthy = healthyGraphSnapshot("export-canvas", nodes, edges);
     downloadTextFile(
       filename,
-      graphToObsidianCanvas(conversationTitle, nodes, edges, appearance),
+      graphToObsidianCanvas(conversationTitle, healthy.nodes, healthy.edges, appearance),
       "application/json"
     );
     onStatus?.(t("file.exported", { filename }));
-  }, [conversationTitle, edges, nodes, onStatus, t]);
+  }, [conversationTitle, edges, healthyGraphSnapshot, nodes, onStatus, t]);
 
   const exportOpml = useCallback(() => {
     const filename = `${safeFilePart(conversationTitle)}.opml`;
+    const healthy = healthyGraphSnapshot("export-opml", nodes, edges);
     downloadTextFile(
       filename,
-      graphToOpml(conversationTitle, nodesForAdvancedExport(nodes), edgesForAdvancedExport(edges)),
+      graphToOpml(conversationTitle, nodesForAdvancedExport(healthy.nodes), edgesForAdvancedExport(healthy.edges)),
       "text/x-opml;charset=utf-8"
     );
     onStatus?.(t("file.exported", { filename }));
-  }, [conversationTitle, edges, nodes, onStatus, t]);
+  }, [conversationTitle, edges, healthyGraphSnapshot, nodes, onStatus, t]);
 
   const exportObsidianVaultMarkdown = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.obsidian-vault.zip`;
     const appearance = await loadExportAppearance();
+    const healthy = healthyGraphSnapshot("export-vault", nodes, edges);
     const files = graphToObsidianVaultMarkdownFiles(
       conversationTitle,
-      nodesForAdvancedExport(nodes),
-      edgesForAdvancedExport(edges),
+      nodesForAdvancedExport(healthy.nodes),
+      edgesForAdvancedExport(healthy.edges),
       appearance
     );
     downloadBlobFile(filename, createZipFromTextFiles(files));
     onStatus?.(t("file.exported", { filename }));
-  }, [conversationTitle, edges, nodes, onStatus, t]);
+  }, [conversationTitle, edges, healthyGraphSnapshot, nodes, onStatus, t]);
 
   const exportSvg = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.svg`;
     const appearance = await loadExportAppearance();
-    downloadTextFile(filename, graphToSvg(conversationTitle, nodes, edges, appearance), "image/svg+xml;charset=utf-8");
+    const healthy = healthyGraphSnapshot("export-svg", nodes, edges);
+    downloadTextFile(filename, graphToSvg(conversationTitle, healthy.nodes, healthy.edges, appearance), "image/svg+xml;charset=utf-8");
     onStatus?.(t("file.exported", { filename }));
-  }, [conversationTitle, edges, nodes, onStatus, t]);
+  }, [conversationTitle, edges, healthyGraphSnapshot, nodes, onStatus, t]);
 
   const exportPng = useCallback(async () => {
     const filename = `${safeFilePart(conversationTitle)}.turnmap.png`;
     try {
       const appearance = await loadExportAppearance();
-      const pngBlob = await svgToPngBlob(graphToSvg(conversationTitle, nodes, edges, appearance));
+      const healthy = healthyGraphSnapshot("export-png", nodes, edges);
+      const pngBlob = await svgToPngBlob(graphToSvg(conversationTitle, healthy.nodes, healthy.edges, appearance));
       downloadBlobFile(filename, pngBlob);
       onStatus?.(t("file.exported", { filename }));
     } catch {
       onStatus?.(t("file.exportPngFailed"));
     }
-  }, [conversationTitle, edges, nodes, onStatus, t]);
+  }, [conversationTitle, edges, healthyGraphSnapshot, nodes, onStatus, t]);
 
   const resetCurrentMap = useCallback(async () => {
     const confirmed = window.confirm(t("file.resetConfirm"));
@@ -2965,6 +4155,7 @@ export function TurnMapCanvas({
     setHiddenRoot(false);
     setHiddenAutoEdgeIds([]);
     setHiddenNodeIds([]);
+    setTopicGroups([]);
     setSelectedEdgeId(null);
     setSelectedRoot(false);
     setPendingSuggestedEdges([]);
@@ -3040,6 +4231,7 @@ export function TurnMapCanvas({
         const positions = positionsFromImportedGraph(graph);
         const overrides = overridesFromImportedGraph(graph);
         const customNodes = customNodesFromImportedGraph(graph);
+        const nextTopicGroups = normalizeImportedTopicGroups(graph.layout?.topicGroups);
         const nextNodes = nodesFromTurns(
           conversationTitle,
           turns,
@@ -3073,38 +4265,46 @@ export function TurnMapCanvas({
               data: {
                 relationship: isRelationship(edge.relationship) ? edge.relationship : "related",
                 important: Boolean(edge.important),
+                weight: normalizeEdgeWeight(edge.weight),
                 confidence: typeof edge.confidence === "number" ? edge.confidence : undefined,
                 reason: typeof edge.reason === "string" ? edge.reason : undefined,
                 createdBy:
                   edge.createdBy === "ai" || edge.createdBy === "user" || edge.createdBy === "topic-analysis"
                     ? edge.createdBy
-                    : undefined
+                    : undefined,
+                originalEdgeId: typeof edge.originalEdgeId === "string" ? edge.originalEdgeId : undefined,
+                proxyKind: edge.proxyKind === "incoming" || edge.proxyKind === "outgoing" ? edge.proxyKind : undefined,
+                topicGroupId: typeof edge.topicGroupId === "string" ? edge.topicGroupId : undefined
               } satisfies RelationshipEdgeData
             })
           );
+        const repairedImported = healthyGraphSnapshot("import-json", nextNodes, [
+          ...autoEdgesFromTurns(turns, nextLayout, nextHiddenRoot, nextHiddenAutoEdgeIds),
+          ...importedUserEdges
+        ]);
+        const repairedUserEdges = repairedImported.edges.filter((edge) => !isAutoEdge(edge));
 
         setLayoutMode(nextLayout);
         setHiddenRoot(nextHiddenRoot);
         setHiddenAutoEdgeIds(nextHiddenAutoEdgeIds);
         setHiddenNodeIds(nextHiddenNodeIds);
+        setTopicGroups(nextTopicGroups);
         setSelectedEdgeId(null);
         setSelectedRoot(false);
-        setNodes(nextNodes);
-        setEdges([
-          ...autoEdgesFromTurns(turns, nextLayout, nextHiddenRoot, nextHiddenAutoEdgeIds),
-          ...importedUserEdges
-        ]);
+        setNodes(repairedImported.nodes);
+        setEdges(repairedImported.edges);
         void saveStoredGraph(
           conversationId,
-          nextNodes,
-          importedUserEdges,
+          repairedImported.nodes,
+          repairedUserEdges,
           nextLayout,
           nextHiddenRoot,
           nextHiddenAutoEdgeIds,
-          nextHiddenNodeIds
+          nextHiddenNodeIds,
+          nextTopicGroups
         );
         void applyImportedAppearance(importedAppearance);
-        onStatus?.(t("file.importedJson", { nodes: nextNodes.length, links: importedUserEdges.length }));
+        onStatus?.(t("file.importedJson", { nodes: repairedImported.nodes.length, links: repairedUserEdges.length }));
       } catch {
         onStatus?.(t("file.importJsonFailed"));
       }
@@ -3112,6 +4312,7 @@ export function TurnMapCanvas({
     [
       conversationId,
       conversationTitle,
+      healthyGraphSnapshot,
       layoutMode,
       onStatus,
       setEdges,
@@ -3155,10 +4356,11 @@ export function TurnMapCanvas({
           .filter((edge) => !isAutoEdge(edge))
           .filter((edge) => edgeHasExistingNodes(edge, nodeIds));
 
-        return [
+        const nextEdges = [
           ...autoEdgesFromTurns(turns, nextLayoutMode, hiddenRoot, hiddenAutoEdgeIds),
-          ...userEdges.map(applyEdgeStyle)
+          ...userEdges.map((edge) => applyEdgeStyle(edge))
         ];
+        return healthyGraphSnapshot("layout", nodes, nextEdges).edges;
       });
       if (saveAsDefault) {
         void saveDefaultLayout(nextLayoutMode);
@@ -3168,6 +4370,7 @@ export function TurnMapCanvas({
     [
       conversationTitle,
       hiddenAutoEdgeIds,
+      healthyGraphSnapshot,
       hiddenRoot,
       hiddenNodeIds,
       nodes,
@@ -3204,9 +4407,17 @@ export function TurnMapCanvas({
         onEdgeClick={onEdgeClick}
         onEdgeContextMenu={onEdgeContextMenu}
         onNodeClick={onNodeClick}
+        onSelectionChange={({ edges: selectedFlowEdges }) => {
+          const ids = selectedFlowEdges.map((edge) => edge.id);
+          if (ids.length > 0) setSelectedMiniNode(null);
+          setSelectedEdgeIds(ids);
+          setSelectedEdgeId(ids.length === 1 ? ids[0] : null);
+        }}
         multiSelectionKeyCode={["Control", "Meta", "Shift"]}
         onPaneClick={() => {
+          setSelectedMiniNode(null);
           setSelectedEdgeId(null);
+          setSelectedEdgeIds([]);
           setSelectedRoot(false);
           setHighlightedEndpointIds([]);
           setFileMenuOpen(false);
@@ -3493,7 +4704,69 @@ export function TurnMapCanvas({
           </div>
         </aside>
       ) : null}
-      {selectedTurnNodes.length >= 2 ? (
+      {selectedMiniNodeContext ? (
+        <aside className="edge-panel node-panel">
+          <div className="edge-panel__header">
+            <strong>{t("panel.miniNodeActions")}</strong>
+            <button type="button" onClick={() => setSelectedMiniNode(null)}>
+              {t("action.close")}
+            </button>
+          </div>
+          <p className="panel-note">{t("panel.miniNodeHint")}</p>
+          <label>
+            {t("field.title")}
+            <input
+              value={selectedMiniNodeContext.miniNode.title}
+              onChange={(event) =>
+                updateMiniNodeInExpansion(selectedMiniNodeContext.parentNode.id, selectedMiniNodeContext.miniNode.id, {
+                  title: event.currentTarget.value
+                })
+              }
+            />
+          </label>
+          <div className="color-picker" aria-label={t("action.colorNode")}>
+            <span className="color-picker__title">{t("action.colorNode")}</span>
+            <div className="color-picker__row">
+              {NODE_COLOR_OPTIONS.map((color) => (
+                <button
+                  key={color.name}
+                  type="button"
+                  className="color-swatch-button"
+                  style={{ backgroundColor: color.value }}
+                  title={t(`color.${color.name}` as I18nKey)}
+                  onClick={() =>
+                    updateMiniNodeInExpansion(selectedMiniNodeContext.parentNode.id, selectedMiniNodeContext.miniNode.id, {
+                      color: color.name
+                    })
+                  }
+                />
+              ))}
+            </div>
+          </div>
+          <label className="edge-panel__check">
+            <input
+              type="checkbox"
+              checked={Boolean(selectedMiniNodeContext.miniNode.important)}
+              onChange={(event) =>
+                updateMiniNodeInExpansion(selectedMiniNodeContext.parentNode.id, selectedMiniNodeContext.miniNode.id, {
+                  important: event.currentTarget.checked
+                })
+              }
+            />
+            {t("action.important")}
+          </label>
+          <button
+            type="button"
+            className="danger-button"
+            onClick={() =>
+              deleteMiniNodeFromExpansion(selectedMiniNodeContext.parentNode.id, selectedMiniNodeContext.miniNode.id)
+            }
+          >
+            {t("action.deleteMiniNode")}
+          </button>
+        </aside>
+      ) : null}
+      {!selectedMiniNodeContext && selectedTurnNodes.length >= 2 ? (
         <aside className="edge-panel node-panel">
           <div className="edge-panel__header">
             <strong>{t("panel.nodesSelected").replace("{count}", String(selectedTurnNodes.length))}</strong>
@@ -3506,15 +4779,32 @@ export function TurnMapCanvas({
             <button type="button" onClick={collapseSelectedAsTopic}>
               {t("action.collapseTopic")}
             </button>
-            <button type="button" onClick={addBulkTag}>
-              {t("action.addTag")}
-            </button>
             <button type="button" onClick={toggleSelectedNodeCollapsed}>
               {selectedTurnNodes.some((node) => !node.data.collapsed) ? t("action.collapseNode") : t("action.expandNode")}
             </button>
             <button type="button" onClick={toggleSelectedNodeImportant}>
               {t("action.important")}
             </button>
+          </div>
+          <div className="tag-editor">
+            <label>
+              {t("field.tag")}
+              <input
+                value={tagDraft}
+                placeholder={t("field.tagPlaceholder")}
+                onChange={(event) => setTagDraft(event.currentTarget.value)}
+              />
+            </label>
+            <button type="button" onClick={addBulkTag}>
+              {t("action.addTag")}
+            </button>
+            <div className="tag-editor__chips">
+              {selectedTagUnion.map((tag) => (
+                <button key={tag} type="button" onClick={() => removeBulkTag(tag)}>
+                  {t("action.removeTag")}: {tag}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="color-picker" aria-label={t("action.colorNode")}>
             <span className="color-picker__title">{t("action.colorNode")}</span>
@@ -3536,7 +4826,7 @@ export function TurnMapCanvas({
           </div>
         </aside>
       ) : null}
-      {selectedTurnNodes.length === 1 ? (
+      {!selectedMiniNodeContext && selectedActionNodes.length === 1 ? (
         <aside className="edge-panel node-panel">
           <div className="edge-panel__header">
             <strong>{t("panel.nodeActions")}</strong>
@@ -3546,15 +4836,69 @@ export function TurnMapCanvas({
             <button type="button" onClick={selectAllTurnNodes}>
               {t("action.selectAllTurns")}
             </button>
+            {selectedActionNodes[0]?.data.topicGroupId ? (
+              <button type="button" onClick={() => expandTopicGroup(selectedActionNodes[0].data.topicGroupId!)}>
+                {t("action.expandTopicGroup")}
+              </button>
+            ) : null}
+            {selectedTurnNodes[0] ? (
+              <>
+                <button type="button" onClick={toggleSelectedNodeCollapsed}>
+                  {selectedTurnNodes[0]?.data.collapsed ? t("action.expandNode") : t("action.collapseNode")}
+                </button>
+                <button type="button" onClick={toggleSelectedNodeImportant}>
+                  {t("action.important")}
+                </button>
+              </>
+            ) : null}
+            {selectedTurnNodes[0] && !selectedTurnNodes[0]?.data.answerExpansion ? (
+              <button
+                type="button"
+                onClick={() => void expandNodeAnswer(selectedTurnNodes[0].id)}
+                disabled={expandingNodeIds.has(selectedTurnNodes[0]?.id)}
+              >
+                {t("action.expandAnswer")}
+              </button>
+            ) : selectedTurnNodes[0] ? (
+              <>
+                <button type="button" onClick={() => setSelectedNodeExpansionMode("original")}>
+                  {t("action.showOriginal")}
+                </button>
+                <button type="button" onClick={() => setSelectedNodeExpansionMode("expanded")}>
+                  {t("action.showExpansion")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void expandNodeAnswer(selectedTurnNodes[0].id, true)}
+                  disabled={expandingNodeIds.has(selectedTurnNodes[0]?.id)}
+                >
+                  {t("action.reexpandAnswer")}
+                </button>
+                <button type="button" onClick={deleteSelectedNodeExpansion}>
+                  {t("action.deleteExpansion")}
+                </button>
+              </>
+            ) : null}
+          </div>
+          <div className="tag-editor">
+            <label>
+              {t("field.tag")}
+              <input
+                value={tagDraft}
+                placeholder={t("field.tagPlaceholder")}
+                onChange={(event) => setTagDraft(event.currentTarget.value)}
+              />
+            </label>
             <button type="button" onClick={addBulkTag}>
               {t("action.addTag")}
             </button>
-            <button type="button" onClick={toggleSelectedNodeCollapsed}>
-              {selectedTurnNodes[0]?.data.collapsed ? t("action.expandNode") : t("action.collapseNode")}
-            </button>
-            <button type="button" onClick={toggleSelectedNodeImportant}>
-              {t("action.important")}
-            </button>
+            <div className="tag-editor__chips">
+              {selectedTagUnion.map((tag) => (
+                <button key={tag} type="button" onClick={() => removeBulkTag(tag)}>
+                  {t("action.removeTag")}: {tag}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="color-picker" aria-label={t("action.colorNode")}>
             <span className="color-picker__title">{t("action.colorNode")}</span>
@@ -3576,7 +4920,48 @@ export function TurnMapCanvas({
           </div>
         </aside>
       ) : null}
-      {selectedEdge ? (
+      {selectedEdges.length > 1 ? (
+        <aside className="edge-panel">
+          <div className="edge-panel__header">
+            <strong>{t("panel.linksSelected", { count: selectedEdges.length })}</strong>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedEdgeIds([]);
+                setSelectedEdgeId(null);
+              }}
+            >
+              {t("action.close")}
+            </button>
+          </div>
+          <p className="panel-note">{t("panel.linkBatchHint")}</p>
+          <RelationshipColorPicker
+            value={(selectedEdges[0]?.data as RelationshipEdgeData | undefined)?.relationship ?? "related"}
+            onChange={(relationship) => updateSelectedEdges({ relationship })}
+          />
+          <label className="edge-panel__check">
+            <input
+              type="checkbox"
+              checked={selectedEdges.every((edge) => Boolean((edge.data as RelationshipEdgeData | undefined)?.important))}
+              onChange={(event) => updateSelectedEdges({ important: event.currentTarget.checked })}
+            />
+            {t("action.important")}
+          </label>
+          <label className="edge-panel__range">
+            <span>
+              {t("action.edgeWeight")} {weightPercent((selectedEdges[0]?.data as RelationshipEdgeData | undefined)?.weight)}%
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={weightPercent((selectedEdges[0]?.data as RelationshipEdgeData | undefined)?.weight)}
+              onChange={(event) => updateSelectedEdges({ weight: Number(event.currentTarget.value) / 100 })}
+            />
+          </label>
+        </aside>
+      ) : selectedEdge ? (
         <aside className="edge-panel">
           <div className="edge-panel__header">
             <strong>{t("panel.linkTitle")}</strong>
@@ -3607,6 +4992,19 @@ export function TurnMapCanvas({
               onChange={(event) => updateSelectedEdge({ important: event.currentTarget.checked })}
             />
             {t("action.important")}
+          </label>
+          <label className="edge-panel__range">
+            <span>
+              {t("action.edgeWeight")} {weightPercent((selectedEdge.data as RelationshipEdgeData | undefined)?.weight)}%
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={weightPercent((selectedEdge.data as RelationshipEdgeData | undefined)?.weight)}
+              onChange={(event) => updateSelectedEdge({ weight: Number(event.currentTarget.value) / 100 })}
+            />
           </label>
           {((selectedEdge.data as RelationshipEdgeData | undefined)?.reason ||
             typeof (selectedEdge.data as RelationshipEdgeData | undefined)?.confidence === "number") ? (

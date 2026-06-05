@@ -354,30 +354,99 @@ textarea:focus-visible {
 }
 
 .status-bar {
+  align-items: center;
   background: var(--cm-status-bg);
   border-bottom: 1px solid var(--cm-border);
   color: var(--cm-text-muted);
+  display: flex;
   font-size: 12px;
+  min-height: 34px;
   padding: 8px 14px;
+}
+
+.status-bar--stacked {
+  align-items: stretch;
+  padding-block: 7px;
+}
+
+.status-bar__tasks {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+
+.status-bar__task {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  line-height: 1.35;
+  min-height: 20px;
+}
+
+.status-bar__task span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-bar__task strong {
+  color: var(--cm-primary);
+  font-size: 11px;
 }
 
 .debug-panel {
   background: var(--cm-surface-soft);
   border-bottom: 1px solid var(--cm-border);
   color: var(--cm-text-muted);
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   font-size: 11px;
-  gap: 8px 14px;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
   padding: 8px 14px;
 }
 
-.debug-panel span {
+.debug-panel__grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  min-width: 0;
+}
+
+.debug-panel__item {
+  background: color-mix(in srgb, var(--cm-surface) 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cm-border) 72%, transparent);
+  border-radius: 6px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.debug-panel__item span {
+  color: var(--cm-text-soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.debug-panel__item strong {
+  color: var(--cm-text-muted);
+  font-weight: 650;
   overflow-wrap: anywhere;
 }
 
+.debug-panel__actions {
+  align-content: start;
+  display: grid;
+  gap: 6px;
+}
+
 .debug-panel__button {
+  justify-content: flex-start;
   padding: 5px 8px;
+  white-space: nowrap;
 }
 
 .canvas-shell {
@@ -557,9 +626,12 @@ textarea:focus-visible {
   border: 1px solid var(--cm-border);
   border-radius: 8px;
   box-shadow: var(--cm-shadow-soft);
+  height: 100%;
   min-height: 130px;
+  min-width: 0;
   padding: 12px;
-  width: 260px;
+  position: relative;
+  width: 100%;
 }
 
 .turn-node.is-colored {
@@ -584,7 +656,33 @@ textarea:focus-visible {
   background: var(--cm-root-bg);
   border-color: var(--cm-border-strong);
   color: var(--cm-text);
-  width: 280px;
+  width: 100%;
+}
+
+.turn-node .react-flow__resize-control.top,
+.turn-node .react-flow__resize-control.top.left,
+.turn-node .react-flow__resize-control.top.right {
+  display: none;
+}
+
+.turn-node .react-flow__resize-control {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0;
+}
+
+.turn-node .react-flow__resize-control.line.left,
+.turn-node .react-flow__resize-control.line.right {
+  width: 14px;
+}
+
+.turn-node .react-flow__resize-control.line.bottom {
+  height: 22px;
+}
+
+.turn-node .react-flow__resize-control.handle {
+  height: 5px;
+  width: 5px;
 }
 
 .turn-node.is-root h2,
@@ -662,6 +760,86 @@ textarea:focus-visible {
   margin: 0;
 }
 
+.turn-node__mini-map {
+  background: color-mix(in srgb, var(--cm-surface) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cm-border) 70%, transparent);
+  border-radius: 8px;
+  margin-top: 8px;
+  overflow: visible;
+  position: relative;
+}
+
+.turn-node__mini-node {
+  background: color-mix(in srgb, var(--node-accent, var(--cm-primary)) 9%, var(--cm-surface));
+  border: 1px solid color-mix(in srgb, var(--node-accent, var(--cm-primary)) 36%, var(--cm-border));
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: var(--cm-text);
+  cursor: pointer;
+  display: -webkit-box;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow: hidden;
+  padding: 6px 8px;
+  position: absolute;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  z-index: 1;
+}
+
+.turn-node__mini-node:hover,
+.turn-node__mini-node.is-selected {
+  border-color: color-mix(in srgb, var(--node-accent, var(--cm-primary)) 72%, var(--cm-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-accent, var(--cm-primary)) 16%, transparent);
+}
+
+.turn-node__mini-node.is-branch {
+  background: color-mix(in srgb, var(--node-accent, var(--cm-primary)) 14%, var(--cm-surface));
+  font-size: 12px;
+}
+
+.turn-node__mini-node.is-summary {
+  background: color-mix(in srgb, var(--node-accent, var(--cm-primary)) 5%, var(--cm-surface));
+  border-style: dashed;
+  color: var(--cm-text-muted);
+}
+
+.turn-node__mini-node.is-important {
+  border-width: 2px;
+}
+
+.turn-node__mini-links {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.turn-node__mini-link {
+  fill: none;
+  stroke: var(--mini-link-color, var(--cm-primary));
+  stroke-linecap: round;
+  stroke-opacity: 0.62;
+  stroke-width: 3;
+}
+
+.turn-node__mini-link.is-summary {
+  stroke-dasharray: 5 7;
+  stroke-opacity: 0.18;
+  stroke-width: 2;
+}
+
+.turn-node__mini-summary-brace {
+  fill: none;
+  stroke: var(--mini-link-color, var(--cm-primary));
+  stroke-linecap: round;
+  stroke-opacity: 0.24;
+  stroke-width: 2.2;
+}
+
 .turn-node__badges {
   display: flex;
   flex-wrap: wrap;
@@ -731,6 +909,32 @@ textarea:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.tag-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.tag-editor label {
+  display: grid;
+  gap: 4px;
+}
+
+.tag-editor input {
+  width: 100%;
+}
+
+.tag-editor__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-editor__chips button {
+  font-size: 11px;
+  min-height: 26px;
+  padding: 3px 7px;
 }
 
 .color-picker {
@@ -999,6 +1203,19 @@ textarea:focus-visible {
   display: flex !important;
   flex-direction: row;
   font-weight: 800;
+}
+
+.edge-panel__range span {
+  display: flex;
+  font-weight: 800;
+  justify-content: space-between;
+}
+
+.edge-panel__range input[type="range"] {
+  accent-color: var(--cm-accent);
+  border: 0;
+  padding: 0;
+  width: 100%;
 }
 
 .panel-note {

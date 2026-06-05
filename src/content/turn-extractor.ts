@@ -1,4 +1,5 @@
 import { hashText } from "../shared/hash";
+import { stableTurnIdAssigner } from "../shared/turn-id.ts";
 import type { SourceAnchor, Turn } from "../shared/types";
 
 type MessageBlock = {
@@ -115,16 +116,19 @@ function readCleanText(element: HTMLElement): string {
   return normalizeText(clone.textContent ?? "");
 }
 
-function getMessageContentElement(root: HTMLElement, role: "user" | "assistant"): HTMLElement {
+function getMessageContentElements(root: HTMLElement, role: "user" | "assistant"): HTMLElement[] {
   if (role === "assistant") {
-    return root.querySelector<HTMLElement>(".markdown") ?? root;
+    const markdownBlocks = Array.from(root.querySelectorAll<HTMLElement>(".markdown")).filter(
+      (element, _index, elements) => !elements.some((candidate) => candidate !== element && candidate.contains(element))
+    );
+    return markdownBlocks.length > 0 ? markdownBlocks : [root];
   }
 
-  return root.querySelector<HTMLElement>('[class*="whitespace-pre-wrap"]') ?? root;
+  return [root.querySelector<HTMLElement>('[class*="whitespace-pre-wrap"]') ?? root];
 }
 
 function getMessageText(root: HTMLElement, role: "user" | "assistant"): string {
-  const text = readCleanText(getMessageContentElement(root, role));
+  const text = getMessageContentElements(root, role).map(readCleanText).filter(Boolean).join("\n\n");
   if (role === "user") return text;
 
   return normalizeText(
@@ -227,6 +231,7 @@ export function extractTurns(): Turn[] {
   const blocks = getMessageBlocks();
   const turns: Turn[] = [];
   let pendingUser: MessageBlock | null = null;
+  const assignTurnId = stableTurnIdAssigner();
 
   const pushTurn = (user: MessageBlock, assistant?: MessageBlock) => {
     const assistantText = assistant?.text || EMPTY_ASSISTANT_REPLY;
@@ -243,7 +248,7 @@ export function extractTurns(): Turn[] {
     };
 
     turns.push({
-      id: `turn-${turnIndex}-${sourceAnchor.userHash}-${sourceAnchor.assistantHash}`,
+      id: assignTurnId(sourceAnchor),
       turnIndex,
       userText: user.text,
       assistantText,
@@ -275,6 +280,7 @@ export function extractTurns(): Turn[] {
 }
 
 export function normalizeTurnIndexes(turns: Turn[]): Turn[] {
+  const assignTurnId = stableTurnIdAssigner();
   return turns.map((turn, turnIndex) => {
     const sourceAnchor: SourceAnchor = {
       ...turn.sourceAnchor,
@@ -283,7 +289,7 @@ export function normalizeTurnIndexes(turns: Turn[]): Turn[] {
 
     return {
       ...turn,
-      id: `turn-${turnIndex}-${sourceAnchor.userHash}-${sourceAnchor.assistantHash}`,
+      id: assignTurnId(sourceAnchor),
       turnIndex,
       sourceAnchor
     };

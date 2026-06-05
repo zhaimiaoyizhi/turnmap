@@ -26,8 +26,13 @@ It currently maps the active conversation on supported AI websites. Cross-conver
 - **Supported websites**: ChatGPT, Gemini, Claude.ai, DeepSeek, Kimi, Doubao, Qwen, Google AI Studio, Perplexity, Grok, GLM / Z.ai / Zhipu Qingyan, Mistral Le Chat, and Arena / LMArena.
 - **Jump to source**: return from a map node to the original source turn.
 - **Editable graph**: edit titles, summaries, tags, statuses, notes, hidden nodes, and links.
+- **Node resizing**: drag the left, right, and bottom resize handles, or the lower-left/lower-right corners, to save custom node proportions.
+- **AI answer expansion**: with an API key configured, turn one assistant answer into a compact title-only mini-map inside the original node; failed or invalid AI output does not change the node.
 - **Custom node appearance**: color nodes, collapse long content, mark important nodes, and tune color rendering with gradient or background modes.
-- **Semantic links**: link colors are clearer and consistent with node color presets; important links can be emphasized more strongly.
+- **Topic groups and batch editing**: collapse selected turns into a restorable topic node, batch add/remove tags, and batch edit selected link type/color/importance.
+- **Semantic links**: link colors are clearer and consistent with node color presets; link weights affect line thickness/opacity, and important links can be emphasized more strongly.
+- **Connection style preference**: choose Curved or Angled normal-node links in Interface settings. Mini-map links are intentionally unchanged.
+- **Graph hygiene**: imports, exports, layout changes, and topic groups run local health checks that repair safe defaults, drop invalid dangling/proxy edges, and write concise status/task-log entries.
 - **AI assist preview**: summarize nodes, suggest high-confidence semantic links, and generate custom UI translations, with provider compatibility still being improved.
 - **Topic Analysis MVP**: locally preclassify high-signal candidate links from node metadata before optional AI review.
 - **More appearance controls**: light, dark, eye-care, and browser-following themes, plus layout and rendering defaults.
@@ -36,7 +41,7 @@ It currently maps the active conversation on supported AI websites. Cross-conver
 - **Page launcher**: a small right-side launcher on supported AI pages. Left-click opens TurnMap; right-click opens settings.
 - **Cleaner tab organization**: related display options are grouped so Side Panel, Full Page, Float, and border/display controls do not crowd the map workspace.
 - **Multiple layouts**: Single-side, Radial, Matrix, and Two-sided.
-- **Import/export**: TurnMap JSON, Obsidian Canvas, OPML, Obsidian vault Markdown, Markdown, SVG, and PNG.
+- **Import/export**: TurnMap JSON, Obsidian Canvas, OPML, Obsidian vault Markdown, Markdown, SVG, and PNG. Prefer TurnMap JSON when you need complete save/restore, including answer expansions, current display modes, topic groups, link weights, and graph metadata.
 - **Local-first storage**: graph state is saved per conversation in the browser profile.
 
 ## Current Views
@@ -97,8 +102,11 @@ GitHub/unpacked installs require manual updates. Store distribution is the right
 5. Single-click a node to select it and use Node Actions.
 6. Right-click node body text to jump back to the source page.
 7. Edit nodes, color nodes, collapse long nodes, mark important nodes, or create links as needed.
-8. Select links to use Link Actions for color, importance, labels, and notes.
-9. Use Files to export or import a map.
+8. Drag the left, right, or bottom handle, or the lower-left/lower-right corner, to resize a node.
+9. Select a turn node and use Node Actions to expand the answer into a mini-map. This requires a configured API key.
+10. Select multiple nodes to batch tag them or collapse them into a restorable topic node.
+11. Select links to use Link Actions for color/type, weight, importance, labels, and notes. Multi-selected links can receive one shared weight.
+12. Use Files to export or import a map. Use TurnMap JSON first for complete editable recovery.
 
 ## Appearance and Interface Settings
 
@@ -108,6 +116,7 @@ TurnMap has a dedicated settings page for global UI preferences:
 - **Language**: follow browser, English, Chinese, and locally saved AI-generated custom UI translations.
 - **Default layout**: Single-side, Radial, Matrix, or Two-sided.
 - **Node color rendering**: choose gradient or solid background rendering and adjust color intensity.
+- **Link style**: choose curved or angled normal-node links. Mini nodes and their internal mini-map links keep their compact built-in style.
 - **AI output budget**: adjust `max_tokens`, which caps output length but does not change the model's context window.
 - **Entry points**: manage Side Panel, Full Page, Float, and page launcher preferences.
 
@@ -140,7 +149,7 @@ Future versions will continue improving AI summaries, AI suggested links, provid
 
 API keys are saved in the browser extension's local storage under the user's local browser profile. Paste the raw key only, without a `Bearer ` prefix. Some providers use the model field as an endpoint ID, and the base URL is always the request entry point rather than part of the key.
 
-TurnMap keeps larger task-level output budgets for summarization, link suggestions, and AI UI translation while leaving `maxTokens` configurable up to 12000. AI translation sends only TurnMap UI labels, may make one extra API call to repair malformed JSON, and stores generated/imported language packs locally. See [AI Provider Guide](docs/ai-provider-guide.md) for provider defaults, language-pack format, response-format requirements, and token-budget notes.
+TurnMap keeps larger task-level output budgets for summarization, link suggestions, and AI UI translation while leaving `maxTokens` configurable up to 24000. AI translation sends only TurnMap UI labels, may make one extra API call to repair malformed JSON, and stores generated/imported language packs locally. See [AI Provider Guide](docs/ai-provider-guide.md) for provider defaults, language-pack format, response-format requirements, and token-budget notes.
 
 ## Privacy
 
@@ -211,7 +220,8 @@ scripts           Build and packaging helpers
 - `0.5.0`: expand API key and provider compatibility with cost-aware presets for OpenAI, DeepSeek, OpenRouter, Qwen, Kimi, Doubao, Zhipu, Mistral, Gemini-compatible Vertex endpoints, and Custom OpenAI-compatible endpoints.
 - `0.5.1`: complete AI UI translation language packs with generation, import/export, JSON repair, local storage, and layout-safety safeguards.
 - `0.6.0`: add local Topic Analysis that preclassifies high-confidence candidate links for review without provider embeddings.
-- `0.7.0`: improve knowledge organization with smarter links, batch link review, topic collapse, and bulk tags.
+- `0.7.0`: improve knowledge organization with answer mini mind maps, smarter links, batch link review, topic collapse, bulk tags, and saved node sizing.
+- `0.7.1`: harden graph hygiene and automatic link reliability with stable new turn IDs, link weights, topic proxy metadata, and local repair logs.
 - `0.8.0`: migrate compatibility to Chrome; Firefox is reserved for a later sidebar-specific phase.
 - `0.9.0`: public beta with 100+ node performance, overflow-safe large-map export, and cancellable AI batch jobs.
 - `0.10.0`: prepare store publication, with Edge Add-ons first and Chrome Web Store following Chrome compatibility.

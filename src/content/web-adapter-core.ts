@@ -1,5 +1,6 @@
 ﻿import type { ConversationSite } from "./adapter-registry";
 import type { JumpToTurnResult, SourceAnchor, Turn } from "../shared/types";
+import { stableTurnIdAssigner } from "../shared/turn-id.ts";
 
 export type ConversationBlock = {
   role: "user" | "assistant";
@@ -234,6 +235,7 @@ function blockId(block: ConversationBlock, fallback: string): string {
 export function blocksToTurns(blocks: ConversationBlock[]): Turn[] {
   const turns: Turn[] = [];
   let pendingUser: ConversationBlock | null = null;
+  const assignTurnId = stableTurnIdAssigner();
 
   const pushTurn = (user: ConversationBlock, assistant?: ConversationBlock) => {
     const userText = normalizeWebText(user.text);
@@ -252,7 +254,7 @@ export function blocksToTurns(blocks: ConversationBlock[]): Turn[] {
     };
 
     turns.push({
-      id: `turn-${turnIndex}-${sourceAnchor.userHash}-${sourceAnchor.assistantHash}`,
+      id: assignTurnId(sourceAnchor),
       turnIndex,
       userText,
       assistantText,
@@ -283,6 +285,7 @@ export function blocksToTurns(blocks: ConversationBlock[]): Turn[] {
 }
 
 export function normalizeWebTurnIndexes(turns: Turn[]): Turn[] {
+  const assignTurnId = stableTurnIdAssigner();
   return turns.map((turn, turnIndex) => {
     const sourceAnchor: SourceAnchor = {
       ...turn.sourceAnchor,
@@ -291,7 +294,7 @@ export function normalizeWebTurnIndexes(turns: Turn[]): Turn[] {
 
     return {
       ...turn,
-      id: `turn-${turnIndex}-${sourceAnchor.userHash}-${sourceAnchor.assistantHash}`,
+      id: assignTurnId(sourceAnchor),
       turnIndex,
       sourceAnchor
     };

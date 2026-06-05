@@ -90,10 +90,10 @@ If a provider rejects `response_format`, TurnMap retries without it.
 
 The context window is decided by the model. `max_tokens` is the output cap, not the input context size.
 
-TurnMap keeps `maxTokens` user-configurable up to 12000 and applies task-level minimum output budgets:
+TurnMap keeps `maxTokens` user-configurable up to 24000 and applies task-level minimum output budgets:
 
 - Test Connection: at least 256
-- Summarize / Auto summarize: at least 1200
+- Summarize / Auto summarize: at least 6000
 - Suggest Links: at least 2400
 - AI UI translation: at least 6000
 
@@ -127,7 +127,8 @@ Generated and imported language packs use this JSON shape:
 
 Rules:
 
-- `languageCode` should be a BCP-47 style code such as `fr-FR`, `ja-JP`, or `de-DE`.
+- AI-generated packs only ask the user for a target language name. TurnMap derives a safe internal `languageCode` automatically.
+- Imported packs still need a BCP-47 style `languageCode` such as `fr-FR`, `ja-JP`, or `de-DE`.
 - Imported packs cannot replace the built-in English or Chinese options.
 - Missing labels are allowed and fall back to English at runtime.
 - Placeholders such as `{count}`, `{current}`, `{total}`, `{steps}`, and `{source}` must be preserved exactly.

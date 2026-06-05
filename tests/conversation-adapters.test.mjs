@@ -626,6 +626,15 @@ test("ChatGPT jump direction can use visible user-only markers before scroll-rat
   assert.match(lookup, /markerMatchesAnchor\(marker, anchor\)/);
 });
 
+test("ChatGPT extractor combines multiple markdown blocks from one assistant message", () => {
+  const source = readFileSync(new URL("../src/content/turn-extractor.ts", import.meta.url), "utf8");
+
+  assert.match(source, /querySelectorAll<HTMLElement>\("\.markdown"\)/);
+  assert.match(source, /markdownBlocks\.length > 0 \? markdownBlocks : \[root\]/);
+  assert.match(source, /getMessageContentElements\(root, role\)\.map\(readCleanText\)\.filter\(Boolean\)\.join\("\\n\\n"\)/);
+  assert.doesNotMatch(source, /root\.querySelector<HTMLElement>\("\\.markdown"\) \?\? root/);
+});
+
 test("Perplexity profile declares its own scroll and content boundaries", () => {
   const source = readFileSync(new URL("../src/content/conversation-adapters.ts", import.meta.url), "utf8");
   const start = source.indexOf('site: siteById("perplexity")');

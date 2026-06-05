@@ -1,9 +1,12 @@
+import { DEFAULT_TOPIC_PROXY_EDGE_WEIGHT, normalizeEdgeWeight } from "./edge-weight.ts";
+
 type TopicSourceNode = {
   id: string;
   title: string;
   summary: string;
   position: { x: number; y: number };
   turnIndex?: number;
+  tags?: string[];
 };
 
 type BuildCollapsedTopicInput = {
@@ -18,6 +21,41 @@ export type CollapsedTopic = {
   position: { x: number; y: number };
   hiddenNodeIds: string[];
   tags: string[];
+};
+
+export type TopicGroupNodeSnapshot = TopicSourceNode & {
+  status?: "open" | "review" | "done";
+  color?: string;
+  collapsed?: boolean;
+  important?: boolean;
+};
+
+export type TopicGroupEdgeSnapshot = {
+  id: string;
+  source: string;
+  target: string;
+  label?: unknown;
+  data?: unknown;
+  isAuto?: boolean;
+  weight?: number;
+};
+
+export type TopicGroupRecord = {
+  id: string;
+  topicNodeId: string;
+  title: string;
+  memberNodeIds: string[];
+  nodeSnapshots: TopicGroupNodeSnapshot[];
+  edgeSnapshots: TopicGroupEdgeSnapshot[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TopicProxyEdge = TopicGroupEdgeSnapshot & {
+  originalEdgeId: string;
+  proxyKind: "incoming" | "outgoing";
+  topicGroupId: string;
+  weight: number;
 };
 
 function compactText(value: string, maxLength: number): string {
@@ -63,3 +101,85 @@ export function buildCollapsedTopic(input: BuildCollapsedTopicInput): CollapsedT
   };
 }
 
+function endpointKey(edge: { source: string; target: string; label?: unknown }): string {
+  return `${edge.source}:${edge.target}:${String(edge.label ?? "")}`;
+}
+
+export function buildTopicGroupRecord(input: {
+  topic: CollapsedTopic;
+  selectedNodes: TopicGroupNodeSnapshot[];
+  edges: TopicGroupEdgeSnapshot[];
+  now?: number;
+}): TopicGroupRecord {
+  const now = new Date(input.now ?? Date.now()).toISOString();
+  const memberIds = new Set(input.topic.hiddenNodeIds);
+  return {
+    id: `topic-group-${input.topic.id}`,
+    topicNodeId: input.topic.id,
+    title: input.topic.title,
+    memberNodeIds: [...memberIds],
+    nodeSnapshots: input.selectedNodes.filter((node) => memberIds.has(node.id)),
+    edgeSnapshots: input.edges.filter((edge) => memberIds.has(edge.source) || memberIds.has(edge.target)),
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+export function buildTopicProxyEdges(input: {
+  topicNodeId: string;
+  topicGroupId?: string;
+  memberNodeIds: string[];
+  edges: TopicGroupEdgeSnapshot[];
+}): TopicProxyEdge[] {
+  const memberIds = new Set(input.memberNodeIds);
+  const seen = new Set<string>();
+  const proxies: TopicProxyEdge[] = [];
+  const topicGroupId = input.topicGroupId ?? input.topicNodeId;
+
+  for (const edge of input.edges) {
+    const sourceInGroup = memberIds.has(edge.source);
+    const targetInGroup = memberIds.has(edge.target);
+    if (sourceInGroup === targetInGroup) continue;
+
+    const edgeData = edge.data && typeof edge.data === "object" ? (edge.data as Record<string, unknown>) : {};
+    const weight = normalizeEdgeWeight(edgeData.weight ?? edge.weight, DEFAULT_TOPIC_PROXY_EDGE_WEIGHT);
+    const proxy =
+      sourceInGroup
+        ? {
+            ...edge,
+            id: `topic-proxy-${input.topicNodeId}-${edge.id}-out`,
+            source: input.topicNodeId,
+            originalEdgeId: edge.id,
+            proxyKind: "outgoing" as const,
+            topicGroupId,
+            weight,
+            data: { ...edgeData, originalEdgeId: edge.id, proxyKind: "outgoing", topicGroupId, weight }
+          }
+        : {
+            ...edge,
+            id: `topic-proxy-${input.topicNodeId}-${edge.id}-in`,
+            target: input.topicNodeId,
+            originalEdgeId: edge.id,
+            proxyKind: "incoming" as const,
+            topicGroupId,
+            weight,
+            data: { ...edgeData, originalEdgeId: edge.id, proxyKind: "incoming", topicGroupId, weight }
+          };
+    const key = endpointKey(proxy);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    proxies.push(proxy);
+  }
+
+  return proxies;
+}
+
+export function topicGroupHasNestedSelection(input: {
+  selectedNodeIds: string[];
+  topicGroups: TopicGroupRecord[];
+}): boolean {
+  const selected = new Set(input.selectedNodeIds);
+  return input.topicGroups.some(
+    (group) => selected.has(group.topicNodeId) || group.memberNodeIds.some((nodeId) => selected.has(nodeId))
+  );
+}

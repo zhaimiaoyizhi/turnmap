@@ -1,7 +1,7 @@
 ﻿export type ThemeMode = "browser" | "day" | "night" | "eye-care";
 
 export const THEME_STORAGE_KEY = "turnmap.interface.theme";
-export const DEFAULT_THEME: ThemeMode = "day";
+export const DEFAULT_THEME: ThemeMode = "browser";
 
 export const THEME_OPTIONS: Array<{ value: ThemeMode; label: string; description: string }> = [
   { value: "browser", label: "Follow browser", description: "Use the browser/system color setting" },

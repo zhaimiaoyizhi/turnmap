@@ -2,6 +2,48 @@
 
 All notable changes to TurnMap will be documented in this file.
 
+## [0.7.1] - Graph Hygiene And Link Reliability
+
+### Added
+
+- Added stable turn ID generation for newly extracted conversations, using message IDs when available and content hashes when they are not.
+- Added link weights across manual links, AI suggestions, topic-analysis candidates, automatic sequence links, and topic proxy links.
+- Added a weight slider to single-link and multi-link Link Actions, with weight affecting line thickness and opacity while important links still receive extra emphasis.
+- Added a global Interface setting for normal-node link style, with Curved as the default and Angled available for users who prefer elbow-like links.
+- Added local graph health repair for layout, import, and export paths, including invalid weight repair, invalid position/dimension repair, dangling edge drops, invalid proxy edge drops, and task-log/status reporting.
+- Added formal topic proxy metadata with `originalEdgeId`, `proxyKind`, `topicGroupId`, and inherited `weight`.
+- Added unit coverage for stable IDs, edge weights, graph health repair, topic proxy metadata, export weight preservation, and i18n wiring.
+
+### Changed
+
+- Updated TurnMap JSON persistence/export schema to `schemaVersion: 4` while continuing to load schema 3 exports.
+- Updated Markdown, OPML, Obsidian vault Markdown, Obsidian Canvas, SVG, and PNG exports to preserve or visually reflect link weights.
+- Updated new answer expansions to always expand to the right; old saved left-direction expansion data is not migrated.
+- Updated package and extension metadata to `0.7.1`.
+
+### Fixed
+
+- Fixed edited link weights forcing normal graph links back into the angled/smoothstep shape when the user wanted curved links.
+- Fixed ChatGPT extraction reading only the first markdown block from a multi-block assistant answer.
+
+## [0.7.0] - Knowledge Organization And Node Editing
+
+### Added
+
+- Added API-only answer expansion that turns a turn's assistant answer into a structured title-only mini mind map inside the original node, with atomic no-write behavior when the AI call fails or returns invalid structure.
+- Added the v2 answer-expansion schema with tree fields, left/right layout direction, up to 80 mini nodes for dense answers, automatic branch coloring, lightweight summary braces, and subtree deletion.
+- Added saved node dimensions with resize handles on the left, right, bottom, lower-left, and lower-right of each node.
+- Added saved answer-expansion data and Mini Node Actions for selected mini nodes, including title edits, color, importance, subtree deletion, and display mode restore.
+- Added restorable topic groups that hide selected turns behind a topic node, proxy boundary links while collapsed, and restore original nodes and links when expanded.
+- Added batch tag editing in Node Actions and batch link type/color/importance editing in Link Actions.
+- Added schema v3 persistence and unit coverage for node dimensions, answer expansion, topic groups, batch tags, and i18n wiring.
+
+### Changed
+
+- Updated TurnMap JSON, PNG/SVG rendering, and Obsidian Canvas export to preserve or reflect answer expansion state, mini-map direction/tree metadata, and node sizing. TurnMap JSON remains the recommended full-fidelity backup format.
+- Updated README, Chinese README, and user guide with 0.7.0 workflows and the resize-handle locations.
+- Updated package and extension metadata to `0.7.0`.
+
 ## [0.6.0] - Topic Analysis MVP
 
 Release notes: `docs/release-notes-0.6.0.md`.

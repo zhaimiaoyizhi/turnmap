@@ -1,4 +1,11 @@
-﻿export type ApiTaskKind = "summarize" | "suggest-links" | "translate" | "test-connection" | "analyze-topics";
+export type ApiTaskKind =
+  | "summarize"
+  | "suggest-links"
+  | "translate"
+  | "test-connection"
+  | "analyze-topics"
+  | "expand-answer"
+  | "graph-health";
 export type ApiTaskStatus = "running" | "success" | "error";
 
 export type ApiTaskLogEntry = {

@@ -14,6 +14,22 @@ export type ExportNode = {
   color?: string;
   collapsed?: boolean;
   important?: boolean;
+  dimensions?: { width: number; height: number; manual: boolean };
+  answerExpansion?: {
+    schemaVersion?: number;
+    displayMode: "expanded" | "original";
+    layoutDirection?: "left" | "right";
+    nodes: Array<{
+      id: string;
+      title: string;
+      role?: string;
+      parentId?: string;
+      branchId?: string;
+      color?: string;
+      important?: boolean;
+    }>;
+    links?: Array<{ id?: string; source: string; target: string; relationship?: string; weight?: number }>;
+  };
   turn?: ExportTurn;
   isConversationRoot?: boolean;
   position?: { x: number; y: number };
@@ -26,6 +42,7 @@ export type ExportEdge = {
   label?: unknown;
   relationship?: string;
   important?: boolean;
+  weight?: number;
   confidence?: number;
   reason?: string;
 };
@@ -90,6 +107,16 @@ function noteLines(node: ExportNode): string[] {
     node.color ? `Color: ${node.color}` : "",
     typeof node.collapsed === "boolean" ? `Collapsed: ${node.collapsed}` : "",
     node.important ? "Important: true" : "",
+    node.dimensions ? `Size: ${node.dimensions.width}x${node.dimensions.height}` : "",
+    node.answerExpansion?.displayMode === "expanded"
+      ? `Answer expansion (${node.answerExpansion.layoutDirection ?? "right"}):\n${node.answerExpansion.nodes
+          .map((miniNode) =>
+            `- ${miniNode.title}${miniNode.role ? ` [${miniNode.role}]` : ""}${
+              miniNode.branchId ? ` branch:${miniNode.branchId}` : ""
+            }${miniNode.parentId ? ` parent:${miniNode.parentId}` : ""}`
+          )
+          .join("\n")}`
+      : "",
     node.turn?.userText ? `User: ${node.turn.userText.trim()}` : "",
     node.turn?.assistantText ? `Assistant: ${node.turn.assistantText.trim()}` : ""
   ].filter(Boolean);
@@ -107,6 +134,10 @@ function edgeConfidence(edge: ExportEdge): string {
   return typeof edge.confidence === "number" ? `${Math.round(edge.confidence * 100)}%` : "";
 }
 
+function edgeWeight(edge: ExportEdge): string {
+  return typeof edge.weight === "number" ? `${Math.round(Math.max(0, Math.min(1, edge.weight)) * 100)}%` : "";
+}
+
 export function graphToOpml(conversationTitle: string, nodes: ExportNode[], edges: ExportEdge[]): string {
   const titleById = new Map(nodes.map((node) => [node.id, node.title || node.id]));
   const nodeOutlines = visibleNodes(nodes)
@@ -122,6 +153,7 @@ export function graphToOpml(conversationTitle: string, nodes: ExportNode[], edge
       const metadata = [
         edgeRelationship(edge),
         edge.important ? "important" : "",
+        edgeWeight(edge) ? `weight ${edgeWeight(edge)}` : "",
         edgeConfidence(edge),
         edgeLabel(edge),
         edge.reason || ""
@@ -190,13 +222,18 @@ function nodeEdgeSection(node: ExportNode, nodesById: Map<string, ExportNode>, e
   const related = edges.filter((edge) => edge.source === node.id || edge.target === node.id);
   if (related.length === 0) return "";
 
-  const lines = ["## Links", "", "| Direction | Node | Relationship | Label | Confidence |", "| --- | --- | --- | --- | --- |"];
+  const lines = [
+    "## Links",
+    "",
+    "| Direction | Node | Relationship | Label | Weight | Confidence |",
+    "| --- | --- | --- | --- | --- | --- |"
+  ];
   related.forEach((edge) => {
     const outgoing = edge.source === node.id;
     const other = nodesById.get(outgoing ? edge.target : edge.source);
     if (!other) return;
     lines.push(
-      `| ${outgoing ? "out" : "in"} | ${obsidianLink(other)} | ${edgeRelationship(edge)} | ${edgeLabel(edge)} | ${edgeConfidence(edge)} |`
+      `| ${outgoing ? "out" : "in"} | ${obsidianLink(other)} | ${edgeRelationship(edge)} | ${edgeLabel(edge)} | ${edgeWeight(edge)} | ${edgeConfidence(edge)} |`
     );
   });
   return lines.join("\n");
@@ -263,13 +300,19 @@ function indexMarkdown(
     lines.push(`- ${obsidianLink(node)}${metadata ? ` - ${metadata}` : ""}`);
   });
 
-  lines.push("", "## Links", "", "| Source | Target | Relationship | Label | Confidence | Reason |", "| --- | --- | --- | --- | --- | --- |");
+  lines.push(
+    "",
+    "## Links",
+    "",
+    "| Source | Target | Relationship | Label | Weight | Confidence | Reason |",
+    "| --- | --- | --- | --- | --- | --- | --- |"
+  );
   edges.forEach((edge) => {
     const source = nodesById.get(edge.source);
     const target = nodesById.get(edge.target);
     if (!source || !target) return;
     lines.push(
-      `| ${source.title} | ${target.title} | ${edgeRelationship(edge)} | ${edgeLabel(edge)} | ${edgeConfidence(edge)} | ${
+      `| ${source.title} | ${target.title} | ${edgeRelationship(edge)} | ${edgeLabel(edge)} | ${edgeWeight(edge)} | ${edgeConfidence(edge)} | ${
         edge.reason ?? ""
       } |`
     );

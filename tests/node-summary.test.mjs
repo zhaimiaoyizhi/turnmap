@@ -79,3 +79,38 @@ test("summarizeTurns builds a multi-source summary prompt from source turns", as
   assert.match(prompt, /Mention HTTPS, rollback, and log visibility\./);
   assert.equal(result.title, "Release note");
 });
+
+test("summarizeTurns keeps enough assistant text and output budget for long answers", async () => {
+  withChromeStorage();
+  let prompt = "";
+  let maxTokens = 0;
+  const longAnswer = `${"A".repeat(11950)}LONG_ANSWER_TAIL${"B".repeat(300)}`;
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(String(init.body));
+    prompt = body.messages[1].content;
+    maxTokens = body.max_tokens;
+    return new Response(JSON.stringify({ choices: [{ message: { content: "{\"title\":\"Long answer\",\"summary\":\"Summarizes the long answer.\"}" } }] }), {
+      status: 200
+    });
+  };
+
+  await summarizeTurns([
+    {
+      id: "turn-long",
+      turnIndex: 0,
+      userText: "Summarize this long answer.",
+      assistantText: longAnswer,
+      extractedAt: 1,
+      sourceAnchor: {
+        turnIndex: 0,
+        userHash: "u-long",
+        assistantHash: "a-long",
+        userPreview: "Summarize this",
+        assistantPreview: "AAAA"
+      }
+    }
+  ]);
+
+  assert.match(prompt, /LONG_ANSWER_TAIL/);
+  assert.equal(maxTokens, 6000);
+});

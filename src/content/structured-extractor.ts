@@ -1,4 +1,5 @@
 import { hashText } from "../shared/hash";
+import { stableTurnIdAssigner } from "../shared/turn-id.ts";
 import type { SourceAnchor, Turn } from "../shared/types";
 import { normalizeTurnIndexes } from "./turn-extractor";
 
@@ -308,6 +309,7 @@ function extractMessages(candidate: ConversationCandidate): FlatMessage[] {
 function turnsFromMessages(messages: FlatMessage[]): Turn[] {
   const turns: Turn[] = [];
   let pendingUser: FlatMessage | null = null;
+  const assignTurnId = stableTurnIdAssigner();
 
   const pushTurn = (user: FlatMessage, assistant?: FlatMessage) => {
     const assistantText = assistant?.text || EMPTY_ASSISTANT_REPLY;
@@ -324,7 +326,7 @@ function turnsFromMessages(messages: FlatMessage[]): Turn[] {
     };
 
     turns.push({
-      id: `turn-${turnIndex}-${sourceAnchor.userHash}-${sourceAnchor.assistantHash}`,
+      id: assignTurnId(sourceAnchor),
       turnIndex,
       userText: user.text,
       assistantText,

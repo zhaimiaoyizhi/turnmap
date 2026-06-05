@@ -252,6 +252,13 @@ export function App({ mode = "side-panel" }: AppProps) {
 
   const hasTurns = turns.length > 0;
   const siteName = lastMessage?.site?.displayName ?? "unknown";
+  const runningTasks = useMemo(
+    () =>
+      taskLog
+        .filter((entry) => entry.status === "running")
+        .slice(0, 3),
+    [taskLog]
+  );
   const subtitle = useMemo(
     () => (hasTurns ? t("app.subtitle.hasTurns") : t("app.subtitle.noTurns")),
     [hasTurns, t]
@@ -317,25 +324,49 @@ export function App({ mode = "side-panel" }: AppProps) {
         </div>
       </header>
 
-      <section className="status-bar">{status}</section>
+      <section className={`status-bar ${runningTasks.length > 1 ? "status-bar--stacked" : ""}`}>
+        {runningTasks.length > 1 ? (
+          <div className="status-bar__tasks">
+            {runningTasks.map((task) => (
+              <div className="status-bar__task" key={task.id}>
+                <span>{task.message}</span>
+                <strong>{task.progress}%</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          status
+        )}
+      </section>
       {debugOpen ? (
         <section className="debug-panel">
-          <span>{t("debug.conversation")}: {conversationTitle}</span>
-          <span>{t("debug.site")}: {siteName}</span>
-          <span>{t("debug.id")}: {conversationId}</span>
-          <span>{t("debug.turns")}: {turns.length}</span>
-          <span>{t("debug.source")}: {lastMessage?.harvestMeta?.source ?? "unknown"}</span>
-          <span>{t("debug.steps")}: {lastMessage?.harvestMeta?.scannedSteps ?? 0}</span>
-          <span>{t("debug.scroll")}: {lastMessage?.harvestMeta?.scrollContainer ?? "n/a"}</span>
-          <span>{t("debug.apiTasks")}: {taskLog.length}</span>
-          <button className="button-with-icon debug-panel__button" type="button" onClick={exportDebugReport}>
-            <Icon name="download" />
-            <span>{t("debug.exportReport")}</span>
-          </button>
-          <button className="button-with-icon debug-panel__button" type="button" onClick={exportTaskLog}>
-            <Icon name="download" />
-            <span>{t("debug.exportTaskLog")}</span>
-          </button>
+          <div className="debug-panel__grid">
+            {[
+              [t("debug.conversation"), conversationTitle],
+              [t("debug.site"), siteName],
+              [t("debug.id"), conversationId],
+              [t("debug.turns"), String(turns.length)],
+              [t("debug.source"), lastMessage?.harvestMeta?.source ?? "unknown"],
+              [t("debug.steps"), String(lastMessage?.harvestMeta?.scannedSteps ?? 0)],
+              [t("debug.scroll"), lastMessage?.harvestMeta?.scrollContainer ?? "n/a"],
+              [t("debug.apiTasks"), String(taskLog.length)]
+            ].map(([label, value]) => (
+              <div className="debug-panel__item" key={label}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="debug-panel__actions">
+            <button className="button-with-icon debug-panel__button" type="button" onClick={exportDebugReport}>
+              <Icon name="download" />
+              <span>{t("debug.exportReport")}</span>
+            </button>
+            <button className="button-with-icon debug-panel__button" type="button" onClick={exportTaskLog}>
+              <Icon name="download" />
+              <span>{t("debug.exportTaskLog")}</span>
+            </button>
+          </div>
         </section>
       ) : null}
 

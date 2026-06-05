@@ -60,7 +60,7 @@ Visible user message:
 ${readableText(turn.userText, 5000)}
 
 Visible assistant answer:
-${readableText(turn.assistantText, 7000)}`;
+${readableText(turn.assistantText, 12000)}`;
 }
 
 function buildMultiTurnPrompt(turns: Turn[]): string {
@@ -108,7 +108,7 @@ async function summarizeWithPrompt(prompt: string): Promise<AiNodeSummary> {
 
   const content = await requestChatCompletion(settings, messages, {
     temperature: 0.1,
-    maxTokens: 1200,
+    maxTokens: 6000,
     jsonMode: true
   });
 
@@ -133,7 +133,7 @@ async function summarizeWithPrompt(prompt: string): Promise<AiNodeSummary> {
             "The previous response was not usable. Generate the actual title and summary from the visible text above. Return only JSON with real title and summary values."
         }
       ],
-      { temperature: 0.1, maxTokens: 1200, jsonMode: true }
+      { temperature: 0.1, maxTokens: 6000, jsonMode: true }
     );
 
     return normalizeSummary(extractJsonObject(retryContent, { looseStringFields: ["title", "summary"] }));

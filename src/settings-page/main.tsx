@@ -11,6 +11,7 @@ import { THEME_OPTIONS, applyTheme } from "../side-panel/settings/theme-storage"
 import { useI18n } from "../side-panel/i18n/useI18n";
 import {
   DEFAULT_LANGUAGE,
+  customLanguageId,
   type CustomLanguage,
   type I18nKey,
   type LanguageMode,
@@ -59,7 +60,6 @@ function SettingsPage() {
   const [languageMode, setLanguageMode] = useState<LanguageMode>(DEFAULT_LANGUAGE);
   const [customLanguages, setCustomLanguages] = useState<CustomLanguage[]>([]);
   const [customLanguageName, setCustomLanguageName] = useState("");
-  const [customLanguageCode, setCustomLanguageCode] = useState("");
   const [languagePackFileName, setLanguagePackFileName] = useState("");
   const [translating, setTranslating] = useState(false);
   const [status, setStatus] = useState("");
@@ -120,13 +120,9 @@ function SettingsPage() {
       setStatus(t("settings.translationNeedsName"));
       return;
     }
-    if (!customLanguageCode.trim()) {
-      setStatus(t("settings.translationNeedsCode"));
-      return;
-    }
 
     setTranslating(true);
-    const taskId = `translate-${customLanguageCode.trim().toLowerCase().replace(/\s+/g, "-")}`;
+    const taskId = `translate-${customLanguageId(customLanguageName)}`;
     setStatus(t("task.translate", { language: customLanguageName.trim() }));
     void recordApiTaskLog({
       id: taskId,
@@ -136,7 +132,7 @@ function SettingsPage() {
       progress: 10
     });
     try {
-      const language = await generateCustomLanguage(customLanguageName, customLanguageCode);
+      const language = await generateCustomLanguage(customLanguageName);
       await saveCustomLanguage(language);
       setCustomLanguages((current) => [language, ...current.filter((item) => item.id !== language.id)].slice(0, 12));
       setLanguageMode(`custom:${language.id}`);
@@ -161,7 +157,7 @@ function SettingsPage() {
     } finally {
       setTranslating(false);
     }
-  }, [customLanguageCode, customLanguageName, t]);
+  }, [customLanguageName, t]);
 
   const importLanguagePackFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -284,6 +280,19 @@ function SettingsPage() {
 
               <p>{t("settings.languageHint")}</p>
 
+              <label>
+                {t("settings.linkConnectionStyle")}
+                <select
+                  value={settings.linkConnectionStyle}
+                  onChange={(event) =>
+                    update({ linkConnectionStyle: event.currentTarget.value as UiSettings["linkConnectionStyle"] })
+                  }
+                >
+                  <option value="curved">{t("settings.linkConnectionStyleCurved")}</option>
+                  <option value="angled">{t("settings.linkConnectionStyleAngled")}</option>
+                </select>
+              </label>
+
               <div className="settings-section__inline">
                 <label>
                   {t("settings.customLanguage")}
@@ -291,14 +300,6 @@ function SettingsPage() {
                     value={customLanguageName}
                     onChange={(event) => setCustomLanguageName(event.currentTarget.value)}
                     placeholder={t("settings.customLanguagePlaceholder")}
-                  />
-                </label>
-                <label>
-                  {t("settings.languageCode")}
-                  <input
-                    value={customLanguageCode}
-                    onChange={(event) => setCustomLanguageCode(event.currentTarget.value)}
-                    placeholder={t("settings.languageCodePlaceholder")}
                   />
                 </label>
                 <button type="button" onClick={() => void translateLanguage()} disabled={translating}>

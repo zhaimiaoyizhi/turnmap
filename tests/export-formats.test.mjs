@@ -43,6 +43,7 @@ const edges = [
     label: "feeds",
     relationship: "supports",
     important: true,
+    weight: 0.74,
     confidence: 0.86,
     reason: "The source collection feeds the synthesis note."
   }
@@ -72,6 +73,7 @@ test("graphToOpml exports nodes and relationship metadata", () => {
   assert.match(opml, /<outline text="Links">/);
   assert.match(opml, /Collect sources -&gt; Synthesis note/);
   assert.match(opml, /supports/);
+  assert.match(opml, /weight 74%/);
   assert.match(opml, /86%/);
 });
 
@@ -89,7 +91,7 @@ test("graphToObsidianVaultMarkdownFiles creates an index and node notes", () => 
   assert.match(index, /node_color_render_mode: solid/);
   assert.match(index, /node_color_render_strength: 86/);
   assert.match(index, /\[\[nodes\/turn-1-collect-sources\|Collect sources\]\]/);
-  assert.match(index, /Collect sources \| Synthesis note \| supports \| feeds \| 86%/);
+  assert.match(index, /Collect sources \| Synthesis note \| supports \| feeds \| 74% \| 86%/);
 
   const turnNote = byPath.get("nodes/turn-1-collect-sources.md") ?? "";
   assert.match(turnNote, /tags:\n  - research\n  - sources/);

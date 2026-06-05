@@ -13,6 +13,17 @@ test("AI settings form renders provider options from metadata and clears API key
   assert.match(source, /providerNoteKey/);
 });
 
+test("AI max token settings keep a conservative default and higher cap", async () => {
+  const storageSource = await readFile(new URL("../src/side-panel/settings/ai-settings-storage.ts", import.meta.url), "utf8");
+  const compatibleSource = await readFile(new URL("../src/side-panel/ai/openai-compatible.ts", import.meta.url), "utf8");
+  const formSource = await readFile(new URL("../src/side-panel/settings/AiSettingsForm.tsx", import.meta.url), "utf8");
+
+  assert.match(storageSource, /DEFAULT_MAX_TOKENS\s*=\s*4000/);
+  assert.match(storageSource, /MAX_MAX_TOKENS\s*=\s*24000/);
+  assert.match(compatibleSource, /MAX_REQUEST_MAX_TOKENS\s*=\s*24000/);
+  assert.match(formSource, /max=\{MAX_MAX_TOKENS\}/);
+});
+
 test("AI provider i18n explains raw API key, preset limits, and endpoint ids", async () => {
   const source = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
 

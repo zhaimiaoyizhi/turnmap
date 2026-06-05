@@ -126,14 +126,14 @@ test("generateCustomLanguage repairs invalid translation JSON once and saves the
     });
   };
 
-  const language = await generateCustomLanguage("Français", "fr-FR");
+  const language = await generateCustomLanguage("Français");
 
   assert.equal(requests.length, 2);
-  assert.match(requests[0].messages[1].content, /"languageCode":"fr-FR"/);
+  assert.match(requests[0].messages[1].content, /"languageCode":"und-fran-ais"/);
   assert.match(requests[0].messages[1].content, /"labels"/);
   assert.doesNotMatch(requests[0].messages[1].content, /private conversation/i);
   assert.match(requests[1].messages[0].content, /repair/i);
-  assert.equal(language.languageCode, "fr-FR");
+  assert.equal(language.languageCode, "und-fran-ais");
   assert.equal(language.translations["app.action.refresh"], "Actualiser");
 });
 
@@ -141,7 +141,9 @@ test("settings page exposes language pack import and export controls", async () 
   const source = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
   const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
 
-  assert.match(source, /settings\.languageCode/);
+  assert.doesNotMatch(source, /settings\.languageCode/);
+  assert.doesNotMatch(source, /customLanguageCode/);
+  assert.match(source, /generateCustomLanguage\(customLanguageName\)/);
   assert.match(source, /settings\.importLanguagePack/);
   assert.match(source, /settings\.exportLanguagePack/);
   assert.match(source, /settings\.languagePackChooseFile/);

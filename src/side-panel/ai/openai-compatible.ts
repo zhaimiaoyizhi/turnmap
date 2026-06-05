@@ -2,7 +2,7 @@ import { metadataForProvider, type AiSettings } from "../settings/ai-settings-st
 
 const DEFAULT_REQUEST_MAX_TOKENS = 1200;
 const MIN_REQUEST_MAX_TOKENS = 256;
-const MAX_REQUEST_MAX_TOKENS = 12000;
+const MAX_REQUEST_MAX_TOKENS = 24000;
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";

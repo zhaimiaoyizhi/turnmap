@@ -79,6 +79,8 @@ export const EN_TRANSLATIONS = {
   "app.view.hideFloat": "Hide Float",
   "app.view.current": "Current",
   "app.confirm.rebuild": "Rebuild will reread the conversation and regenerate the mind map, replacing your current edits. Continue?",
+  "app.confirm.deleteExpansion": "Delete this answer expansion? The original answer stays, but mini-map edits will be removed.",
+  "app.confirm.reexpandAnswer": "Re-expand this answer with AI? This can overwrite existing mini-map edits.",
   "app.status.waiting": "Waiting for an AI conversation...",
   "app.status.cacheFailed": "Turns loaded, but IndexedDB caching failed.",
   "app.status.mappedDeepScan": "{count} turns mapped via deep-scan after {steps} steps",
@@ -184,15 +186,24 @@ export const EN_TRANSLATIONS = {
   "panel.organizeSelected": "Organize selected turns as notes or review groups.",
   "panel.nodeActions": "Node Actions",
   "panel.nodeHint": "Create notes, split this turn, or start bulk organization.",
+  "panel.miniNodeActions": "Mini Node Actions",
+  "panel.miniNodeHint": "Edit the selected mini node without changing the AI-generated structure.",
   "panel.linkTitle": "Link Actions",
+  "panel.linksSelected": "{count} Links Selected",
+  "panel.linkBatchHint": "Apply changes to all selected links.",
   "panel.headerTitle": "Header",
   "panel.headerHint": "Double-click the header text to edit it.",
+  "field.title": "Title",
   "field.type": "Type",
   "field.label": "Label",
+  "field.tag": "Tag",
+  "field.tagPlaceholder": "Add tag...",
   "action.close": "Close",
   "action.mergeNodes": "Merge Nodes",
   "action.collapseTopic": "Collapse Topic",
+  "action.expandTopicGroup": "Expand Topic",
   "action.addTag": "Add Tag",
+  "action.removeTag": "Remove",
   "action.colorNode": "Color",
   "action.collapseNode": "Fold",
   "action.expandNode": "Unfold",
@@ -203,9 +214,17 @@ export const EN_TRANSLATIONS = {
   "action.splitNode": "Split Node",
   "action.selectAllTurns": "Select All Turns",
   "action.important": "Important",
+  "action.edgeWeight": "Weight",
   "action.convertToNote": "Convert to Note",
   "action.deleteLink": "Delete Link",
+  "action.deleteMiniNode": "Delete",
+  "action.expandAnswer": "Expand Answer",
+  "action.reexpandAnswer": "Re-expand",
+  "action.showOriginal": "Show Original",
+  "action.showExpansion": "Show Expanded",
+  "action.deleteExpansion": "Delete Expansion",
   "action.deleteHeader": "Delete Header",
+  "app.confirm.deleteMiniSubtree": "Delete this mini node and {count} related mini nodes?",
   "label.confidence": "Confidence",
   "color.theme": "Theme",
   "color.slate": "Slate",
@@ -220,6 +239,15 @@ export const EN_TRANSLATIONS = {
   "status.nodesExpanded": "Selected nodes unfolded.",
   "status.nodesImportant": "Selected nodes marked important.",
   "status.nodesNormal": "Selected nodes unmarked important.",
+  "status.nodeResized": "Node size saved.",
+  "status.expansionDeleted": "Answer expansion deleted.",
+  "status.tagAdded": "Added tag to {count} nodes.",
+  "status.tagRemoved": "Removed {tag} from {count} nodes.",
+  "status.linksUpdated": "Updated {count} links.",
+  "status.topicCollapsed": "Collapsed {count} nodes into a topic.",
+  "status.topicExpanded": "Expanded topic and restored {count} nodes.",
+  "status.topicNestedRejected": "Topic groups cannot be nested.",
+  "expansion.emptyGuidance": "This expansion has fewer than two mini nodes. Restore the original answer or run AI expansion again.",
   "task.summarizeOne": "Summarizing turn {current}... 5%",
   "task.summarizeOneDone": "Turn {current} summarized. 100%",
   "task.summarizeNote": "Summarizing #AI note from {count} source turns... 5%",
@@ -242,6 +270,15 @@ export const EN_TRANSLATIONS = {
   "task.analyzeTopicsDone": "{count} topic link candidates ready for review. 100%",
   "task.analyzeTopicsNone": "No strong topic link candidates found. 100%",
   "task.analyzeTopicsFailed": "Topic analysis failed.",
+  "task.expandAnswer": "Preparing answer expansion... 10%",
+  "task.expandAnswerPreparing": "Preparing answer text for expansion... 12%",
+  "task.expandAnswerOutline": "Reading headings, lists, and bold structure cues... 28%",
+  "task.expandAnswerRequesting": "Asking AI to build the mini-map... 55%",
+  "task.expandAnswerValidating": "Validating mini-map structure... 78%",
+  "task.expandAnswerLayout": "Fitting the mini-map layout... 90%",
+  "task.expandAnswerDone": "Answer expansion ready. 100%",
+  "task.expandAnswerFailed": "Answer expansion failed.",
+  "task.graphHealthDone": "Graph health repaired: {corrected} corrected, {dropped} dropped, {fatal} fatal. 100%",
   "task.translate": "Translating TurnMap UI to {language}... 10%",
   "task.translateDone": "Translation generated for {language}. 100%",
   "settings.theme": "Theme",
@@ -254,6 +291,9 @@ export const EN_TRANSLATIONS = {
   "settings.language.english": "English",
   "settings.language.chinese": "Chinese",
   "settings.languageHint": "Built-in Chinese and English follow the browser by default.",
+  "settings.linkConnectionStyle": "Link style",
+  "settings.linkConnectionStyleCurved": "Curved",
+  "settings.linkConnectionStyleAngled": "Angled",
   "settings.customLanguage": "Custom language",
   "settings.customLanguagePlaceholder": "Spanish, Japanese, German...",
   "settings.languageCode": "Language code",
@@ -311,9 +351,9 @@ export const EN_TRANSLATIONS = {
   "ai.apiKeyRawHint":
     "Paste the raw API key only. Do not include the Bearer prefix; TurnMap adds the Authorization header for you.",
   "ai.maxTokens": "Max output tokens",
-  "ai.maxTokensPlaceholder": "1200",
+  "ai.maxTokensPlaceholder": "4000",
   "ai.maxTokensHint":
-    "This is the output limit, not the model context window. Increase it if summaries, translations, or link suggestions return empty answers.",
+    "This is the output limit, not the model context window. TurnMap uses a conservative higher budget for long-answer summaries; increase this only when your provider and model support it.",
   "ai.providerPresetLimit":
     "Provider presets are convenience defaults. Accounts, regions, model names, JSON mode, and context windows can vary by provider.",
   "ai.providerNote.openai": "Default: gpt-5.4-nano for fast, lower-cost long-context OpenAI-compatible work.",
@@ -347,6 +387,43 @@ export type I18nKey = keyof typeof EN_TRANSLATIONS;
 export type TranslationMap = Record<I18nKey, string>;
 
 export const ZH_TRANSLATIONS: TranslationMap = {
+  ...EN_TRANSLATIONS,
+  "action.expandTopicGroup": "展开主题",
+  "action.removeTag": "移除",
+  "status.nodeResized": "节点尺寸已保存。",
+  "status.expansionDeleted": "回答展开已删除。",
+  "status.tagAdded": "已向 {count} 个节点添加标签。",
+  "status.tagRemoved": "已从 {count} 个节点移除 {tag}。",
+  "status.linksUpdated": "已更新 {count} 条链接。",
+  "status.topicCollapsed": "已将 {count} 个节点折叠为主题。",
+  "status.topicExpanded": "已展开主题并恢复 {count} 个节点。",
+  "status.topicNestedRejected": "主题折叠不能嵌套。",
+  "expansion.emptyGuidance": "这个展开结果少于两个 mini 节点。请恢复原回答或重新运行 AI 展开。",
+  "task.expandAnswer": "正在准备回答展开... 10%",
+  "task.expandAnswerPreparing": "正在准备回答文本... 12%",
+  "task.expandAnswerOutline": "正在读取标题、列表和加粗结构线索... 28%",
+  "task.expandAnswerRequesting": "正在请求 AI 生成 mini 思维导图... 55%",
+  "task.expandAnswerValidating": "正在校验 mini 思维导图结构... 78%",
+  "task.expandAnswerLayout": "正在适配 mini 思维导图布局... 90%",
+  "task.expandAnswerDone": "回答展开已完成。100%",
+  "task.expandAnswerFailed": "回答展开失败。",
+  "task.graphHealthDone": "图谱卫生修复：已修正 {corrected} 项，已丢弃 {dropped} 项，严重 {fatal} 项。100%",
+  "panel.linksSelected": "已选择 {count} 条链接",
+  "panel.linkBatchHint": "将修改应用到所有选中的链接。",
+  "field.tag": "标签",
+  "field.tagPlaceholder": "添加标签...",
+  "action.deleteMiniNode": "删除",
+  "panel.miniNodeActions": "Mini 节点操作",
+  "panel.miniNodeHint": "编辑选中的 mini 节点，不改变 AI 生成的整体结构。",
+  "field.title": "标题",
+  "action.expandAnswer": "展开回答",
+  "action.reexpandAnswer": "重新展开",
+  "action.showOriginal": "显示原文",
+  "action.showExpansion": "显示展开",
+  "action.deleteExpansion": "删除展开",
+  "app.confirm.deleteExpansion": "删除这个回答展开？原回答会保留，但 mini 思维导图编辑会被移除。",
+  "app.confirm.deleteMiniSubtree": "删除这个 mini 节点及相关的 {count} 个 mini 节点吗？",
+  "app.confirm.reexpandAnswer": "用 AI 重新展开这个回答？这可能覆盖已有 mini 思维导图编辑。",
   "app.documentTitle": "TurnMap",
   "app.documentTitle.fullPage": "TurnMap 全屏页",
   "app.kicker": "对话思维导图",
@@ -490,6 +567,7 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "action.splitNode": "拆分节点",
   "action.selectAllTurns": "选择全部轮次",
   "action.important": "重要",
+  "action.edgeWeight": "权重",
   "action.convertToNote": "转换为笔记",
   "action.deleteLink": "删除链接",
   "action.deleteHeader": "删除表头",
@@ -541,6 +619,9 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "settings.language.english": "English",
   "settings.language.chinese": "中文",
   "settings.languageHint": "内置中文和英文，默认跟随浏览器语言。",
+  "settings.linkConnectionStyle": "连接样式",
+  "settings.linkConnectionStyleCurved": "曲线",
+  "settings.linkConnectionStyleAngled": "折线",
   "settings.customLanguage": "自定义语言",
   "settings.customLanguagePlaceholder": "西班牙语、日语、德语...",
   "settings.languageCode": "语言代码",
@@ -594,8 +675,8 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "ai.apiKeyPlaceholder": "保存在本地",
   "ai.apiKeyRawHint": "只粘贴 API Key 原文，不要包含 Bearer 前缀；TurnMap 会自动生成 Authorization 请求头。",
   "ai.maxTokens": "最大输出 tokens",
-  "ai.maxTokensPlaceholder": "1200",
-  "ai.maxTokensHint": "这是输出上限，不是模型上下文窗口。如果总结、翻译或推荐链接返回空内容，请调高这个值。",
+  "ai.maxTokensPlaceholder": "4000",
+  "ai.maxTokensHint": "这是输出上限，不是模型上下文窗口。TurnMap 会为长回答总结使用较高但保守的预算；仅在 provider 和模型支持时再调高。",
   "ai.providerPresetLimit": "Provider 预设只是便利默认值；账号、地域、模型名、JSON mode 和上下文窗口可能随服务商变化。",
   "ai.providerNote.openai": "默认使用 gpt-5.4-nano，适合快速、低成本、长上下文的 OpenAI-compatible 任务。",
   "ai.providerNote.deepseek": "默认使用 deepseek-v4-flash。旧的 deepseek-chat 配置仍可保留，但不再作为新默认值。",
@@ -796,7 +877,14 @@ export function importLanguagePack(value: unknown, existingLanguages: CustomLang
 function languagePackFromGeneratedPayload(value: unknown, languageName: string, languageCode: string): unknown {
   const unwrapped = unwrapLanguagePack(value);
   if (isRecord(unwrapped) && isRecord(unwrapped.translations)) {
-    return unwrapped;
+    return {
+      ...unwrapped,
+      schemaVersion: LANGUAGE_PACK_SCHEMA_VERSION,
+      app: LANGUAGE_PACK_APP,
+      languageCode,
+      languageName,
+      sourceLocale: LANGUAGE_PACK_SOURCE_LOCALE
+    };
   }
   if (isRecord(unwrapped) && Object.keys(unwrapped).some((key) => key in EN_TRANSLATIONS)) {
     return {
@@ -840,6 +928,29 @@ export function customLanguageId(languageName: string, languageCode?: string): s
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
   return base || `custom-${Date.now()}`;
+}
+
+function stableLanguageHash(value: string): string {
+  let hash = 2166136261;
+  for (const char of value) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function generatedLanguageCode(languageName: string): string {
+  const slug = languageName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.slice(0, 8))
+    .slice(0, 3)
+    .join("-");
+  return `und-${slug || stableLanguageHash(languageName)}`;
 }
 
 function normalizeCustomLanguages(value: unknown): CustomLanguage[] {
@@ -945,11 +1056,10 @@ async function repairGeneratedLanguagePack(
   return parseLanguagePackFromText(content, languageName, languageCode);
 }
 
-export async function generateCustomLanguage(languageName: string, languageCode: string): Promise<CustomLanguage> {
+export async function generateCustomLanguage(languageName: string, languageCode?: string): Promise<CustomLanguage> {
   const trimmedLanguageName = languageName.trim();
-  const trimmedLanguageCode = languageCode.trim();
   if (!trimmedLanguageName) throw new Error("Target language is required.");
-  if (!trimmedLanguageCode) throw new Error("Target language code is required.");
+  const trimmedLanguageCode = languageCode?.trim() || generatedLanguageCode(trimmedLanguageName);
   const settings = await loadAiSettings();
   const content = await requestChatCompletion(
     settings,
