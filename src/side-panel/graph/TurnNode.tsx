@@ -75,7 +75,7 @@ export function TurnNode({ id, data, selected }: NodeProps) {
         selected ? "is-selected" : ""
       } ${nodeData.collapsed ? "is-collapsed" : ""} ${nodeData.important ? "is-important" : ""} ${
         nodeData.color ? "is-colored" : ""
-      }`}
+      } ${nodeData.answerExpansion?.displayMode === "expanded" ? "is-expanded" : ""}`}
       style={
         nodeData.color
           ? ({

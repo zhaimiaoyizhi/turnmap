@@ -670,6 +670,11 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--node-accent) var(--node-color-fill-mix, 25%), var(--cm-node-bg));
 }
 
+.turn-node.is-colored.is-expanded,
+:root[data-turnmap-node-color-render="solid"] .turn-node.is-colored.is-expanded {
+  background: var(--cm-node-bg);
+}
+
 .turn-node.is-selected {
   border-color: var(--cm-primary);
   box-shadow:
