@@ -1478,12 +1478,21 @@ function svgMiniColor(color: unknown, fallback: string): string {
   return isNodeColorName(color) ? (colorValue(color) ?? fallback) : fallback;
 }
 
-function renderMiniMapSvg(node: Node<TurnNodeData>, mapX: number, mapY: number, fallbackColor: string): string {
+function renderMiniMapSvg(
+  node: Node<TurnNodeData>,
+  mapX: number,
+  mapY: number,
+  fallbackColor: string,
+  appearance: GraphAppearance | undefined,
+  index: number
+): string {
   const expansion = node.data.answerExpansion;
   if (expansion?.displayMode !== "expanded") return "";
   const layout = calculateMiniMapLayout(expansion);
   const nodeById = new Map(expansion.nodes.map((miniNode) => [miniNode.id, miniNode]));
   const direction = expansion.layoutDirection === "left" ? -1 : 1;
+  const theme = SVG_THEME_COLORS[appearance?.resolvedTheme ?? "day"];
+  const colorMix = svgColorMixStrength(appearance);
   const summaryTargets = new Set(
     expansion.links
       .filter((link) => link.relationship === "summary")
@@ -1537,11 +1546,29 @@ function renderMiniMapSvg(node: Node<TurnNodeData>, mapX: number, mapY: number, 
     })
     .join("");
 
+  const miniNodeGradients = expansion.nodes
+    .map((miniNode, miniIndex) => {
+      const item = layout.nodes[miniNode.id];
+      if (!item || appearance?.nodeColorRendering.mode === "solid") return "";
+      const accent = svgMiniColor(miniNode.color, fallbackColor);
+      const miniGradientId = `mini-node-accent-${index}-${miniIndex}`;
+      return `
+        <linearGradient id="${miniGradientId}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="${accent}" stop-opacity="${colorMix.fillOpacity}" />
+          <stop offset="58%" stop-color="${theme.node}" stop-opacity="1" />
+          <stop offset="100%" stop-color="${theme.node}" stop-opacity="1" />
+        </linearGradient>`;
+    })
+    .join("");
+
   const miniNodeMarkup = expansion.nodes
-    .map((miniNode) => {
+    .map((miniNode, miniIndex) => {
       const item = layout.nodes[miniNode.id];
       if (!item) return "";
       const accent = svgMiniColor(miniNode.color, fallbackColor);
+      const miniGradientId = `mini-node-accent-${index}-${miniIndex}`;
+      const miniFill = appearance?.nodeColorRendering.mode === "solid" ? accent : `url(#${miniGradientId})`;
+      const miniFillOpacity = appearance?.nodeColorRendering.mode === "solid" ? colorMix.fillOpacity : 1;
       const x = mapX + item.x;
       const y = mapY + item.y;
       const lines = wrapText(miniNode.title, item.width - 16, miniNode.role === "branch" ? 12 : 11, 3);
@@ -1550,7 +1577,7 @@ function renderMiniMapSvg(node: Node<TurnNodeData>, mapX: number, mapY: number, 
         .join("");
       return `
         <g>
-          <rect x="${x}" y="${y}" width="${item.width}" height="${item.height}" rx="6" fill="${accent}" fill-opacity="${miniNode.role === "summary" ? 0.08 : miniNode.role === "branch" ? 0.16 : 0.11}" stroke="${accent}" stroke-opacity="${miniNode.important ? 0.95 : 0.58}" stroke-width="${miniNode.important ? 2 : 1}" ${miniNode.role === "summary" ? 'stroke-dasharray="5 5"' : ""} />
+          <rect x="${x}" y="${y}" width="${item.width}" height="${item.height}" rx="6" fill="${miniFill}" fill-opacity="${miniFillOpacity}" stroke="${accent}" stroke-opacity="${miniNode.important ? 0.95 : 0.58}" stroke-width="${miniNode.important ? 2 : 1}" ${miniNode.role === "summary" ? 'stroke-dasharray="5 5"' : ""} />
           <text class="${miniNode.role === "summary" ? "mini-text-summary" : "mini-text"}">${textMarkup}</text>
         </g>`;
     })
@@ -1558,6 +1585,7 @@ function renderMiniMapSvg(node: Node<TurnNodeData>, mapX: number, mapY: number, 
 
   return `
     <g>
+      <defs>${miniNodeGradients}</defs>
       <rect x="${mapX}" y="${mapY}" width="${layout.width}" height="${layout.height}" rx="8" fill="transparent" stroke="${fallbackColor}" stroke-opacity="0.14" />
       ${linkMarkup}
       ${braceMarkup}
@@ -1710,7 +1738,7 @@ function graphToSvg(
         )
         .join("");
       const miniMarkup = hasExpandedMiniMap
-        ? renderMiniMapSvg(node, x + 16, y + 72 + titleLines.length * 18, accent ?? theme.text)
+        ? renderMiniMapSvg(node, x + 16, y + 72 + titleLines.length * 18, accent ?? theme.text, appearance, index)
         : "";
       const fill = accent
         ? appearance?.nodeColorRendering.mode === "solid"
@@ -1724,10 +1752,13 @@ function graphToSvg(
       const strokeWidth = node.data.important ? 3 : 1;
       const shadowColor = accent ?? "#000000";
       const shadowOpacity = node.data.important ? colorMix.shadowOpacity : 0.08;
+      const importantGlow = node.data.important && !hasExpandedMiniMap
+        ? `<ellipse cx="${x + nodeWidth / 2}" cy="${y + height / 2}" rx="${nodeWidth / 2 + 12}" ry="${height / 2 + 12}" fill="${shadowColor}" opacity="${shadowOpacity}" />`
+        : "";
 
       return `
     <g>
-      ${node.data.important ? `<ellipse cx="${x + nodeWidth / 2}" cy="${y + height / 2}" rx="${nodeWidth / 2 + 12}" ry="${height / 2 + 12}" fill="${shadowColor}" opacity="${shadowOpacity}" />` : ""}
+      ${importantGlow}
       <clipPath id="${clipId}">
         <rect x="${x + 12}" y="${y + 10}" width="${nodeWidth - 24}" height="${height - 20}" rx="6" />
       </clipPath>

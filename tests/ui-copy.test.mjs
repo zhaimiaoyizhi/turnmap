@@ -39,17 +39,22 @@ test("TurnMap JSON and visual exports preserve appearance settings", async () =>
   assert.match(turnNodeSource, /targetEdge - direction \* Math\.min\(16, Math\.max\(8, gap \/ 2\)\)/);
 });
 
-test("expanded answer mini maps do not stretch outer node coloring into large blobs", async () => {
+test("expanded answer mini maps keep node-sized coloring in live view and exports", async () => {
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
   const turnNodeSource = await readFile(new URL("../src/side-panel/graph/TurnNode.tsx", import.meta.url), "utf8");
   const stylesSource = await readFile(new URL("../src/side-panel/styles.css", import.meta.url), "utf8");
 
   assert.match(turnNodeSource, /nodeData\.answerExpansion\?\.displayMode === "expanded" \? "is-expanded" : ""/);
-  assert.match(stylesSource, /\.turn-node\.is-colored\.is-expanded\s*\{[\s\S]*background:\s*var\(--cm-node-bg\);/);
-  assert.match(stylesSource, /:root\[data-turnmap-node-color-render="solid"\]\s+\.turn-node\.is-colored\.is-expanded\s*\{[\s\S]*background:\s*var\(--cm-node-bg\);/);
+  assert.doesNotMatch(stylesSource, /\.turn-node\.is-colored\.is-expanded\s*,[\s\S]*background:\s*var\(--cm-node-bg\);/);
+  assert.match(stylesSource, /\.turn-node__mini-node\s*\{[\s\S]*linear-gradient\(135deg, color-mix\(in srgb, var\(--node-accent/);
+  assert.match(stylesSource, /:root\[data-turnmap-node-color-render="solid"\]\s+\.turn-node__mini-node\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--node-accent/);
   assert.match(turnNodeSource, /className=\{`turn-node__mini-node/);
   assert.match(turnNodeSource, /width:\s*item\.width/);
   assert.match(turnNodeSource, /height:\s*item\.height/);
   assert.match(turnNodeSource, /"--node-accent": colorValue\(miniNode\.color as NodeColorName\)/);
+  assert.match(canvasSource, /const miniGradientId = `mini-node-accent-\$\{index\}-\$\{miniIndex\}`/);
+  assert.match(canvasSource, /fill="\$\{miniFill\}"/);
+  assert.match(canvasSource, /const importantGlow = node\.data\.important && !hasExpandedMiniMap/);
 });
 
 test("rebuild action is localized and resets saved graph before regenerating", async () => {

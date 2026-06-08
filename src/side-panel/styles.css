@@ -670,11 +670,6 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--node-accent) var(--node-color-fill-mix, 25%), var(--cm-node-bg));
 }
 
-.turn-node.is-colored.is-expanded,
-:root[data-turnmap-node-color-render="solid"] .turn-node.is-colored.is-expanded {
-  background: var(--cm-node-bg);
-}
-
 .turn-node.is-selected {
   border-color: var(--cm-primary);
   box-shadow:
@@ -800,7 +795,9 @@ textarea:focus-visible {
 }
 
 .turn-node__mini-node {
-  background: color-mix(in srgb, var(--node-accent, var(--cm-primary)) 9%, var(--cm-surface));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--node-accent, var(--cm-primary)) var(--node-color-fill-mix, 25%), transparent), transparent 58%),
+    var(--cm-surface);
   border: 1px solid color-mix(in srgb, var(--node-accent, var(--cm-primary)) 36%, var(--cm-border));
   border-radius: 6px;
   box-sizing: border-box;
@@ -820,6 +817,10 @@ textarea:focus-visible {
   z-index: 1;
 }
 
+:root[data-turnmap-node-color-render="solid"] .turn-node__mini-node {
+  background: color-mix(in srgb, var(--node-accent, var(--cm-primary)) var(--node-color-fill-mix, 25%), var(--cm-surface));
+}
+
 .turn-node__mini-node:hover,
 .turn-node__mini-node.is-selected {
   border-color: color-mix(in srgb, var(--node-accent, var(--cm-primary)) 72%, var(--cm-border));
@@ -827,12 +828,10 @@ textarea:focus-visible {
 }
 
 .turn-node__mini-node.is-branch {
-  background: color-mix(in srgb, var(--node-accent, var(--cm-primary)) 14%, var(--cm-surface));
   font-size: 12px;
 }
 
 .turn-node__mini-node.is-summary {
-  background: color-mix(in srgb, var(--node-accent, var(--cm-primary)) 5%, var(--cm-surface));
   border-style: dashed;
   color: var(--cm-text-muted);
 }
