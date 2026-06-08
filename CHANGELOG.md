@@ -6,10 +6,12 @@ All notable changes to TurnMap will be documented in this file.
 
 ### Added
 
+- Added the 0.7.1 mini mind map polish path: clearer title-only answer expansion layout, persistent mini-map export rendering, and editing controls that stay in the existing actions panels instead of crowding mini nodes.
 - Added stable turn ID generation for newly extracted conversations, using message IDs when available and content hashes when they are not.
 - Added link weights across manual links, AI suggestions, topic-analysis candidates, automatic sequence links, and topic proxy links.
 - Added a weight slider to single-link and multi-link Link Actions, with weight affecting line thickness and opacity while important links still receive extra emphasis.
 - Added a global Interface setting for normal-node link style, with Curved as the default and Angled available for users who prefer elbow-like links.
+- Added appearance refinements for graph editing controls, including themed layout selection and always-visible color previews in Node Actions, Mini Node Actions, and Link Actions.
 - Added local graph health repair for layout, import, and export paths, including invalid weight repair, invalid position/dimension repair, dangling edge drops, invalid proxy edge drops, and task-log/status reporting.
 - Added formal topic proxy metadata with `originalEdgeId`, `proxyKind`, `topicGroupId`, and inherited `weight`.
 - Added unit coverage for stable IDs, edge weights, graph health repair, topic proxy metadata, export weight preservation, and i18n wiring.

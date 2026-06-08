@@ -93,7 +93,7 @@ For preview builds, download the release zip from GitHub Releases, unzip it, and
 
 GitHub/unpacked installs require manual updates. Store distribution is the right path for automatic browser-managed updates.
 
-Latest preview package: `turnmap-v0.7.1.zip`. This release focuses on graph hygiene, stable newly generated turn IDs, weighted links, proxy edge metadata, ChatGPT extraction repair, and link-style stability after weight edits. For long-term backup or transfer, export TurnMap JSON first because it preserves TurnMap-specific editing state more completely than visual formats.
+Latest preview package: `turnmap-v0.7.1.zip`. This release highlights API-powered answer expansion into compact mini mind maps, clearer mini-map layout and export rendering, stronger graph hygiene, stable newly generated turn IDs, weighted links, proxy edge metadata, ChatGPT extraction repair, and appearance customization such as normal-link style selection plus persistent color previews. For long-term backup or transfer, export TurnMap JSON first because it preserves TurnMap-specific editing state more completely than visual formats.
 
 ## Basic Usage
 
@@ -223,7 +223,7 @@ scripts           Build and packaging helpers
 - `0.5.1`: complete AI UI translation language packs with generation, import/export, JSON repair, local storage, and layout-safety safeguards.
 - `0.6.0`: add local Topic Analysis that preclassifies high-confidence candidate links for review without provider embeddings.
 - `0.7.0`: improve knowledge organization with answer mini mind maps, smarter links, batch link review, topic collapse, bulk tags, and saved node sizing.
-- `0.7.1`: harden graph hygiene and automatic link reliability with stable new turn IDs, link weights, topic proxy metadata, and local repair logs.
+- `0.7.1`: refine mini mind maps and appearance customization while hardening graph hygiene and automatic link reliability with stable new turn IDs, link weights, topic proxy metadata, and local repair logs.
 - `0.8.0`: migrate compatibility to Chrome; Firefox is reserved for a later sidebar-specific phase.
 - `0.9.0`: public beta with 100+ node performance, overflow-safe large-map export, and cancellable AI batch jobs.
 - `0.10.0`: prepare store publication, with Edge Add-ons first and Chrome Web Store following Chrome compatibility.
