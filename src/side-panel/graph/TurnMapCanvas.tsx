@@ -881,10 +881,11 @@ function RelationshipColorPicker({
             type="button"
             className="color-swatch-button"
             aria-pressed={value === option.value}
-            style={{ backgroundColor: relationshipColor(option.value) }}
             title={t(RELATIONSHIP_LABEL_KEYS[option.value])}
             onClick={() => onChange(option.value)}
-          />
+          >
+            <span className="color-swatch-button__preview" style={{ backgroundColor: relationshipColor(option.value) }} />
+          </button>
         ))}
       </div>
     </div>
@@ -2109,6 +2110,7 @@ export function TurnMapCanvas({
   const [suggestingLinks, setSuggestingLinks] = useState(false);
   const [analyzingTopics, setAnalyzingTopics] = useState(false);
   const [autoSummarize, setAutoSummarize] = useState(false);
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -4423,6 +4425,7 @@ export function TurnMapCanvas({
           setSelectedEdgeIds([]);
           setSelectedRoot(false);
           setHighlightedEndpointIds([]);
+          setLayoutMenuOpen(false);
           setFileMenuOpen(false);
         }}
         onInit={(instance) => {
@@ -4435,20 +4438,33 @@ export function TurnMapCanvas({
         <Controls />
       </ReactFlow>
       <div className="graph-toolbar">
-        <label className="layout-picker">
-          <Icon name="layout" />
-          <span>{t("toolbar.layout")}</span>
-          <select
-            value={layoutMode}
-            onChange={(event) => applyLayout(event.currentTarget.value as LayoutMode)}
-          >
-            {LAYOUT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {t(LAYOUT_LABEL_KEYS[option.value])}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="layout-picker">
+          <button className="button-with-icon" type="button" onClick={() => setLayoutMenuOpen((open) => !open)}>
+            <Icon name="layout" />
+            <span>{t("toolbar.layout")}</span>
+            <span className="layout-picker__current">{t(LAYOUT_LABEL_KEYS[layoutMode])}</span>
+            <Icon name="chevronDown" size={14} />
+          </button>
+          {layoutMenuOpen ? (
+            <div className="layout-picker__panel">
+              {LAYOUT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  className="button-with-icon"
+                  type="button"
+                  disabled={layoutMode === option.value}
+                  onClick={() => {
+                    applyLayout(option.value);
+                    setLayoutMenuOpen(false);
+                  }}
+                >
+                  <Icon name="layout" />
+                  <span>{t(LAYOUT_LABEL_KEYS[option.value])}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <button className="button-with-icon" type="button" onClick={suggestLinks} disabled={suggestingLinks}>
           <Icon name="sparkles" />
           <span>{suggestingLinks ? t("toolbar.suggesting") : t("toolbar.suggestLinks")}</span>
@@ -4735,14 +4751,15 @@ export function TurnMapCanvas({
                   key={color.name}
                   type="button"
                   className="color-swatch-button"
-                  style={{ backgroundColor: color.value }}
                   title={t(`color.${color.name}` as I18nKey)}
                   onClick={() =>
                     updateMiniNodeInExpansion(selectedMiniNodeContext.parentNode.id, selectedMiniNodeContext.miniNode.id, {
                       color: color.name
                     })
                   }
-                />
+                >
+                  <span className="color-swatch-button__preview" style={{ backgroundColor: color.value }} />
+                </button>
               ))}
             </div>
           </div>
@@ -4817,10 +4834,11 @@ export function TurnMapCanvas({
                   key={color.name}
                   type="button"
                   className="color-swatch-button"
-                  style={{ backgroundColor: color.value }}
                   title={t(`color.${color.name}` as I18nKey)}
                   onClick={() => updateSelectedNodeAppearance({ color: color.name })}
-                />
+                >
+                  <span className="color-swatch-button__preview" style={{ backgroundColor: color.value }} />
+                </button>
               ))}
             </div>
             <button type="button" onClick={() => updateSelectedNodeAppearance({ color: undefined })}>
@@ -4911,10 +4929,11 @@ export function TurnMapCanvas({
                   key={color.name}
                   type="button"
                   className="color-swatch-button"
-                  style={{ backgroundColor: color.value }}
                   title={t(`color.${color.name}` as I18nKey)}
                   onClick={() => updateSelectedNodeAppearance({ color: color.name })}
-                />
+                >
+                  <span className="color-swatch-button__preview" style={{ backgroundColor: color.value }} />
+                </button>
               ))}
             </div>
             <button type="button" onClick={() => updateSelectedNodeAppearance({ color: undefined })}>

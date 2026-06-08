@@ -303,6 +303,21 @@ test("node resize edge hit areas do not enlarge corner handles", async () => {
   assert.doesNotMatch(stylesSource, /\.turn-node \.react-flow__resize-control\.bottom\s*\{\s*(?:bottom|height):/s);
 });
 
+test("layout and color controls use themed menu and persistent swatches", async () => {
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+  const stylesSource = await readFile(new URL("../src/side-panel/styles.css", import.meta.url), "utf8");
+  const layoutStart = canvasSource.indexOf('<div className="layout-picker">');
+  const layoutEnd = canvasSource.indexOf('<button className="button-with-icon" type="button" onClick={suggestLinks}', layoutStart);
+  const layoutBody = canvasSource.slice(layoutStart, layoutEnd);
+
+  assert.match(layoutBody, /layout-picker__panel/);
+  assert.match(layoutBody, /layout-picker__current/);
+  assert.doesNotMatch(layoutBody, /<select/);
+  assert.match(canvasSource, /color-swatch-button__preview/);
+  assert.match(stylesSource, /\.layout-picker__panel\s*\{[\s\S]*background:\s*var\(--cm-menu-bg\)/);
+  assert.match(stylesSource, /\.color-swatch-button__preview\s*\{/);
+});
+
 test("link suggestion progress and review actions are visible in the status bar", async () => {
   const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
   const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
