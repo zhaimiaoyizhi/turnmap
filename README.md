@@ -93,6 +93,8 @@ For preview builds, download the release zip from GitHub Releases, unzip it, and
 
 GitHub/unpacked installs require manual updates. Store distribution is the right path for automatic browser-managed updates.
 
+Latest preview package: `turnmap-v0.7.1.zip`. This release focuses on graph hygiene, stable newly generated turn IDs, weighted links, proxy edge metadata, ChatGPT extraction repair, and link-style stability after weight edits. For long-term backup or transfer, export TurnMap JSON first because it preserves TurnMap-specific editing state more completely than visual formats.
+
 ## Basic Usage
 
 1. Open a supported AI conversation.
