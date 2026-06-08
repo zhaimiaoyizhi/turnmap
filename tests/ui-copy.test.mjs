@@ -242,6 +242,23 @@ test("collapsed node action writes compact automatic dimensions", async () => {
   assert.match(canvasSource, /dimensions/);
 });
 
+test("manual node text editing does not auto-resize nodes or leak editor events", async () => {
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+  const turnNodeSource = await readFile(new URL("../src/side-panel/graph/TurnNode.tsx", import.meta.url), "utf8");
+  const updateStart = canvasSource.indexOf("const updateNodeText = useCallback");
+  const updateEnd = canvasSource.indexOf("const updateNodeDimensions = useCallback", updateStart);
+  const updateBody = canvasSource.slice(updateStart, updateEnd);
+
+  assert.doesNotMatch(updateBody, /withContentFittingDimensions/);
+  assert.match(updateBody, /\.\.\.updates/);
+  assert.match(turnNodeSource, /trimmed !== nodeData\[field\]\.trim\(\)/);
+  assert.match(turnNodeSource, /const stopEditorEvent/);
+  assert.match(turnNodeSource, /className="turn-node__editor turn-node__editor--title nodrag nopan nowheel"/);
+  assert.match(turnNodeSource, /className="turn-node__editor nodrag nopan nowheel"/);
+  assert.match(turnNodeSource, /onPointerDown=\{stopEditorEvent\}/);
+  assert.match(turnNodeSource, /onDoubleClick=\{stopEditorEvent\}/);
+});
+
 test("debug panel and running task status use compact multi-row layout", async () => {
   const appSource = await readFile(new URL("../src/side-panel/App.tsx", import.meta.url), "utf8");
   const stylesSource = await readFile(new URL("../src/side-panel/styles.css", import.meta.url), "utf8");

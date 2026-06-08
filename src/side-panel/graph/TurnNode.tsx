@@ -54,10 +54,13 @@ export function TurnNode({ id, data, selected }: NodeProps) {
 
   const commitEdit = (field: "title" | "summary", value: string) => {
     const trimmed = value.trim();
-    if (trimmed) {
+    if (trimmed && trimmed !== nodeData[field].trim()) {
       nodeData.onUpdate?.(id, { [field]: trimmed });
     }
     setEditingField(null);
+  };
+  const stopEditorEvent = (event: { stopPropagation: () => void }) => {
+    event.stopPropagation();
   };
   const jumpFromText = (event: MouseEvent) => {
     event.preventDefault();
@@ -121,10 +124,15 @@ export function TurnNode({ id, data, selected }: NodeProps) {
       </div>
       {editingField === "title" ? (
         <textarea
-          className="turn-node__editor turn-node__editor--title"
+          className="turn-node__editor turn-node__editor--title nodrag nopan nowheel"
           defaultValue={nodeData.title}
           onBlur={(event) => commitEdit("title", event.currentTarget.value)}
+          onPointerDown={stopEditorEvent}
+          onMouseDown={stopEditorEvent}
+          onClick={stopEditorEvent}
+          onDoubleClick={stopEditorEvent}
           onKeyDown={(event) => {
+            event.stopPropagation();
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               commitEdit("title", event.currentTarget.value);
@@ -151,10 +159,15 @@ export function TurnNode({ id, data, selected }: NodeProps) {
         />
       ) : editingField === "summary" ? (
         <textarea
-          className="turn-node__editor"
+          className="turn-node__editor nodrag nopan nowheel"
           defaultValue={nodeData.summary}
           onBlur={(event) => commitEdit("summary", event.currentTarget.value)}
+          onPointerDown={stopEditorEvent}
+          onMouseDown={stopEditorEvent}
+          onClick={stopEditorEvent}
+          onDoubleClick={stopEditorEvent}
           onKeyDown={(event) => {
+            event.stopPropagation();
             if (event.key === "Enter" && event.ctrlKey) {
               event.preventDefault();
               commitEdit("summary", event.currentTarget.value);

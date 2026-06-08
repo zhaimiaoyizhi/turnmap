@@ -2224,10 +2224,13 @@ export function TurnMapCanvas({
       setNodes((currentNodes) =>
         currentNodes.map((node) =>
           node.id === nodeId
-            ? withContentFittingDimensions(node, {
-                ...node.data,
-                ...updates
-              })
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  ...updates
+                }
+              }
             : node
         )
       );
