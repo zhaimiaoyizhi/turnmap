@@ -8,7 +8,9 @@ TurnMap is an Edge-first browser extension that maps the current AI conversation
 
 > Status: early preview. TurnMap is not yet published to Edge Add-ons or Chrome Web Store. Install it manually from source or from a GitHub Release package.
 
-![TurnMap preview](docs/assets/github-social-preview.png)
+![TurnMap turns a long web AI conversation into an editable mind map](docs/assets/github-social-preview.png)
+
+TurnMap keeps the original chat close by while giving you a map you can scan, edit, color, expand, and export.
 
 ## What It Is For
 
@@ -22,27 +24,45 @@ It currently maps the active conversation on supported AI websites. Cross-conver
 
 ## Highlights
 
-- **Conversation map**: turns the current AI conversation into a node map.
-- **Supported websites**: ChatGPT, Gemini, Claude.ai, DeepSeek, Kimi, Doubao, Qwen, Google AI Studio, Perplexity, Grok, GLM / Z.ai / Zhipu Qingyan, Mistral Le Chat, and Arena / LMArena.
-- **Jump to source**: return from a map node to the original source turn.
-- **Editable graph**: edit titles, summaries, tags, statuses, notes, hidden nodes, and links.
-- **Node resizing**: drag the left, right, and bottom resize handles, or the lower-left/lower-right corners, to save custom node proportions.
-- **AI answer expansion**: with an API key configured, turn one assistant answer into a compact title-only mini-map inside the original node; failed or invalid AI output does not change the node.
-- **Custom node appearance**: color nodes, collapse long content, mark important nodes, and tune color rendering with gradient or background modes.
-- **Topic groups and batch editing**: collapse selected turns into a restorable topic node, batch add/remove tags, and batch edit selected link type/color/importance.
-- **Semantic links**: link colors are clearer and consistent with node color presets; link weights affect line thickness/opacity, and important links can be emphasized more strongly.
-- **Connection style preference**: choose Curved or Angled normal-node links in Interface settings. Mini-map links are intentionally unchanged.
-- **Graph hygiene**: imports, exports, layout changes, and topic groups run local health checks that repair safe defaults, drop invalid dangling/proxy edges, and write concise status/task-log entries.
-- **AI assist preview**: summarize nodes, suggest high-confidence semantic links, and generate custom UI translations, with provider compatibility still being improved.
-- **Topic Analysis MVP**: locally preclassify high-signal candidate links from node metadata before optional AI review.
-- **More appearance controls**: light, dark, eye-care, and browser-following themes, plus layout and rendering defaults.
-- **Multiple views**: Side Panel, Full Page, and Float.
-- **Settings Page**: manage AI, interface defaults, theme, language, launcher, Float, and update preferences outside the map workspace.
-- **Page launcher**: a small right-side launcher on supported AI pages. Left-click opens TurnMap; right-click opens settings.
-- **Cleaner tab organization**: related display options are grouped so Side Panel, Full Page, Float, and border/display controls do not crowd the map workspace.
-- **Multiple layouts**: Single-side, Radial, Matrix, and Two-sided.
-- **Import/export**: TurnMap JSON, Obsidian Canvas, OPML, Obsidian vault Markdown, Markdown, SVG, and PNG. Prefer TurnMap JSON when you need complete save/restore, including answer expansions, current display modes, topic groups, link weights, and graph metadata.
-- **Local-first storage**: graph state is saved per conversation in the browser profile.
+- **Long conversation map**: turn a sprawling web AI conversation into a node map you can actually scan.
+- **Jump back to source**: right-click node text to return to the original answer in the source website.
+- **Answer mini mind maps**: expand one long assistant answer into a compact, title-only map inside the original node.
+- **Topic organization**: collapse selected turns into restorable topic groups and review local Topic Analysis candidates.
+- **Editable knowledge graph**: edit titles, summaries, tags, statuses, notes, hidden nodes, and relationship links.
+- **Visual structure controls**: resize nodes, color nodes, mark important nodes, fold long content, and tune gradient or solid color rendering.
+- **Semantic links and weights**: distinguish relationship types with consistent colors and make stronger links visually heavier.
+- **Multiple layouts and views**: use Single-side, Radial, Matrix, or Two-sided layouts in Side Panel, Full Page, or Float.
+- **Multi-site web AI support**: map conversations from ChatGPT, Gemini, Claude.ai, DeepSeek, Kimi, Doubao, Qwen, Perplexity, Grok, GLM / Z.ai, Mistral, Arena / LMArena, and more.
+- **Export and restore**: export TurnMap JSON, Obsidian Canvas, OPML, Obsidian vault Markdown, Markdown, SVG, and PNG. Use TurnMap JSON for the most complete editable backup.
+- **Local-first storage**: keep graph state, UI preferences, and generated language packs in the local browser profile.
+
+## Visual Tour
+
+### Map Long Web AI Conversations
+
+TurnMap turns a single long web AI thread into a navigable graph. The map keeps conversation order, topic structure, source jumping, and your own edits in one workspace.
+
+![A long AI conversation mapped into TurnMap with node actions and an expanded answer mini mind map](docs/assets/github-social-preview.png)
+
+### Expand Answers Into Mini Mind Maps
+
+Dense answers can become compact mini maps inside the original node. This is useful for research summaries, naming debates, step-by-step plans, comparison tables, or any answer that is too long to stay readable as plain chat text.
+
+![Exported TurnMap PNG showing colored conversation nodes and an expanded answer mini mind map](docs/assets/提高ChatMap曝光率建议.turnmap.png)
+
+### Export What You Build
+
+TurnMap can export both editable backups and shareable visual files. For long-term recovery, choose TurnMap JSON; for sharing, use SVG or PNG; for knowledge workflows, use Obsidian Canvas, OPML, Markdown, or an Obsidian vault bundle.
+
+<p>
+  <img src="docs/assets/导出页截图.png" alt="TurnMap Files menu with JSON, Canvas, OPML, Obsidian Vault, SVG, PNG, and Markdown exports" width="260" />
+</p>
+
+### Tune The Workspace
+
+The settings page keeps provider setup, interface defaults, themes, language packs, link style, node color rendering, launcher behavior, and update preferences away from the map canvas.
+
+![TurnMap settings page with AI provider, interface, language, link style, and node color rendering controls](docs/assets/设置截图页.png)
 
 ## Current Views
 
