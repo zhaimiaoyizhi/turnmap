@@ -1,6 +1,7 @@
 ﻿import type { ConversationSite } from "./adapter-registry";
 import type { JumpToTurnResult, SourceAnchor, Turn } from "../shared/types";
 import { stableTurnIdAssigner } from "../shared/turn-id.ts";
+import { smartHarvestByScrolling } from "./smart-scroll-harvest.ts";
 
 export type ConversationBlock = {
   role: "user" | "assistant";
@@ -814,64 +815,23 @@ export async function harvestWebTurnsByScrolling(profile: WebConversationProfile
 }> {
   const scrollElement = getWebChatScrollElement(profile);
   const originalTop = scrollElement.scrollTop;
-  let fallbackHarvested: Turn[] = [];
-  let harvested: Turn[] = [];
-  let scannedSteps = 0;
-
-  const collectFallback = () => {
-    fallbackHarvested = mergeWebTurns(fallbackHarvested, extractTurnsFromDocument(profile));
-  };
-
-  const collectOrdered = () => {
-    harvested = mergeWebTurns(harvested, extractTurnsFromDocument(profile));
-  };
-
-  collectFallback();
-
-  for (let step = 0; step < 100; step += 1) {
-    const currentTop = scrollElement.scrollTop;
-    if (currentTop <= 4) break;
-
-    scrollElement.scrollTo({
-      top: Math.max(0, currentTop - Math.max(scrollElement.clientHeight * 0.9, 650)),
-      behavior: "instant"
-    });
-    await delay(360);
-    collectFallback();
-    scannedSteps += 1;
-
-    if (Math.abs(scrollElement.scrollTop - currentTop) < 4) break;
-  }
-
-  scrollElement.scrollTo({ top: 0, behavior: "instant" });
-  await delay(650);
-  collectFallback();
-  collectOrdered();
-
-  for (let step = 0; step < 100; step += 1) {
-    collectOrdered();
-
-    const currentTop = scrollElement.scrollTop;
-    const nextTop = Math.min(
-      currentTop + Math.max(scrollElement.clientHeight * 0.85, 650),
-      scrollElement.scrollHeight
-    );
-
-    if (currentTop + scrollElement.clientHeight >= scrollElement.scrollHeight - 4) break;
-    if (nextTop <= currentTop + 4) break;
-
-    scrollElement.scrollTo({ top: nextTop, behavior: "instant" });
-    await delay(360);
-    scannedSteps += 1;
-  }
-
-  collectOrdered();
-  scrollElement.scrollTo({ top: originalTop, behavior: "instant" });
+  const result = await (async () => {
+    try {
+      return await smartHarvestByScrolling({
+        scrollElement,
+        collectTurns: () => extractTurnsFromDocument(profile),
+        mergeTurns: mergeWebTurns,
+        normalizeTurns: normalizeWebTurnIndexes
+      });
+    } finally {
+      scrollElement.scrollTo({ top: originalTop, behavior: "instant" });
+    }
+  })();
 
   return {
-    turns: normalizeWebTurnIndexes(harvested.length > 0 ? harvested : fallbackHarvested),
+    turns: result.turns,
     scrollElement,
-    scannedSteps
+    scannedSteps: result.scannedSteps
   };
 }
 

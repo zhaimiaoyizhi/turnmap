@@ -1,6 +1,7 @@
 ﻿import type { ExtractedTurnsMessage, Turn } from "../shared/types";
 import { extractConversationApiTurns } from "./conversation-api-extractor";
 import { describeScrollElement, getChatScrollElement } from "./scroll-container";
+import { smartHarvestByScrolling } from "./smart-scroll-harvest.ts";
 import { extractStructuredTurns } from "./structured-extractor";
 import { extractTurns, mergeTurns, normalizeTurnIndexes } from "./turn-extractor";
 
@@ -29,10 +30,6 @@ function emitTurns(listener: TurnsListener): void {
       : mergeTurns(latestTurns, turns);
     listener(latestTurns);
   });
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 export function getConversationTitle(): string {
@@ -81,68 +78,28 @@ async function getNonDisruptiveTurns(): Promise<Turn[]> {
 export async function harvestTurnsByScrolling(): Promise<Turn[]> {
   const scrollElement = getChatScrollElement();
   const originalTop = scrollElement.scrollTop;
-  let fallbackHarvested: Turn[] = [];
-  let harvested: Turn[] = [];
-  let scannedSteps = 0;
+  const result = await (async () => {
+    try {
+      return await smartHarvestByScrolling({
+        scrollElement,
+        collectTurns: extractTurns,
+        mergeTurns,
+        normalizeTurns: normalizeTurnIndexes,
+        maxDownSteps: 90
+      });
+    } finally {
+      scrollElement.scrollTo({ top: originalTop, behavior: "instant" });
+    }
+  })();
 
-  const collectFallback = () => {
-    fallbackHarvested = mergeTurns(fallbackHarvested, extractTurns());
-  };
-
-  const collectOrdered = () => {
-    harvested = mergeTurns(harvested, extractTurns());
-  };
-
-  collectFallback();
-
-  for (let step = 0; step < 100; step += 1) {
-    const currentTop = scrollElement.scrollTop;
-    if (currentTop <= 4) break;
-
-    scrollElement.scrollTo({
-      top: Math.max(0, currentTop - Math.max(scrollElement.clientHeight * 0.9, 650)),
-      behavior: "instant"
-    });
-    await delay(320);
-    collectFallback();
-    scannedSteps += 1;
-
-    if (Math.abs(scrollElement.scrollTop - currentTop) < 4) break;
-  }
-
-  scrollElement.scrollTo({ top: 0, behavior: "instant" });
-  await delay(550);
-  collectFallback();
-  collectOrdered();
-
-  for (let step = 0; step < 80; step += 1) {
-    collectOrdered();
-
-    const currentTop = scrollElement.scrollTop;
-    const nextTop = Math.min(
-      currentTop + Math.max(scrollElement.clientHeight * 0.85, 650),
-      scrollElement.scrollHeight
-    );
-
-    if (currentTop + scrollElement.clientHeight >= scrollElement.scrollHeight - 4) break;
-    if (nextTop <= currentTop + 4) break;
-
-    scrollElement.scrollTo({ top: nextTop, behavior: "instant" });
-    await delay(320);
-    scannedSteps += 1;
-  }
-
-  collectOrdered();
-
-  latestTurns = normalizeTurnIndexes(harvested.length > 0 ? harvested : fallbackHarvested);
-  scrollElement.scrollTo({ top: originalTop, behavior: "instant" });
+  latestTurns = result.turns;
   lastHarvestMeta = {
     attempted: true,
     source: "deep-scan",
     scrollContainer: describeScrollElement(scrollElement),
     scrollHeight: scrollElement.scrollHeight,
     clientHeight: scrollElement.clientHeight,
-    scannedSteps
+    scannedSteps: result.scannedSteps
   };
   return latestTurns;
 }

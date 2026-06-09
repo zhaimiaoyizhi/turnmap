@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ExtractedTurnsMessage, Turn } from "../shared/types";
+import { useRef } from "react";
 import { isTurnMapMessage, requestTurnsFromActiveTab, setFloatingPanelInTab } from "../shared/messaging";
 import { Icon } from "./components/Icon";
 import { buildDebugReport } from "./debug-report";
@@ -16,6 +17,7 @@ import {
   type ApiTaskLogEntry,
   type ApiTaskStatus
 } from "./task-log";
+import { mergeTurnUpdates, type TurnUpdateMode } from "./turn-merge";
 
 type AppProps = {
   mode?: "side-panel" | "full-page";
@@ -58,37 +60,62 @@ export function App({ mode = "side-panel" }: AppProps) {
   const [lastMessage, setLastMessage] = useState<ExtractedTurnsMessage | null>(null);
   const [taskLog, setTaskLog] = useState<ApiTaskLogEntry[]>([]);
   const [rebuildRequest, setRebuildRequest] = useState(0);
+  const [turnUpdateMode, setTurnUpdateMode] = useState<TurnUpdateMode>("refresh");
   const [sourceTabId, setSourceTabId] = useState<number | undefined>(() =>
     mode === "full-page" ? sourceTabIdFromUrl() : undefined
   );
+  const turnsRef = useRef<Turn[]>([]);
 
-  const applyTurnsMessage = useCallback((message: ExtractedTurnsMessage) => {
+  const applyTurnsMessage = useCallback((message: ExtractedTurnsMessage, mode: TurnUpdateMode = "refresh") => {
     setLastMessage(message);
-    setTurns(message.turns);
+    setTurnUpdateMode(mode);
+    const merged = mergeTurnUpdates(turnsRef.current, message.turns, mode);
+    turnsRef.current = merged.turns;
+    setTurns(merged.turns);
     setConversationId(message.conversationId);
     setConversationTitle(message.conversationTitle);
     if (message.site?.id === "unsupported") {
       setStatus(t("app.status.openConversation"));
       return;
     }
-    void saveTurnsToIndexedDb(message.conversationId, message.conversationTitle, message.turns).catch(() => {
+    void saveTurnsToIndexedDb(message.conversationId, message.conversationTitle, merged.turns).catch(() => {
       setStatus(t("app.status.cacheFailed"));
     });
     const meta = message.harvestMeta;
+    if (mode === "refresh") {
+      setStatus(
+        merged.added > 0
+          ? t("app.status.refreshAdded", { added: merged.added, total: merged.turns.length })
+          : t("app.status.refreshNoNew", { total: merged.turns.length })
+      );
+      return;
+    }
+    if (mode === "deep-scan") {
+      setStatus(
+        merged.added > 0
+          ? t("app.status.deepScanAdded", {
+              added: merged.added,
+              total: merged.turns.length,
+              steps: meta?.scannedSteps ?? 0
+            })
+          : t("app.status.deepScanNoNew", { total: merged.turns.length, steps: meta?.scannedSteps ?? 0 })
+      );
+      return;
+    }
     setStatus(
       meta
         ? meta.source === "deep-scan"
-          ? t("app.status.mappedDeepScan", { count: message.turns.length, steps: meta.scannedSteps })
-          : t("app.status.mappedVia", { count: message.turns.length, source: meta.source })
-        : t("app.status.loadedTurns", { count: message.turns.length })
+          ? t("app.status.mappedDeepScan", { count: merged.turns.length, steps: meta.scannedSteps })
+          : t("app.status.mappedVia", { count: merged.turns.length, source: meta.source })
+        : t("app.status.loadedTurns", { count: merged.turns.length })
     );
   }, [t]);
 
   const refreshTurns = useCallback(async () => {
     setStatus(t("app.status.reading"));
-    const message = await requestTurnsFromActiveTab({ ensureFull: true, tabId: sourceTabId });
+    const message = await requestTurnsFromActiveTab({ tabId: sourceTabId });
     if (message?.type === "TURNMAP_TURNS_UPDATED") {
-      applyTurnsMessage(message);
+      applyTurnsMessage(message, "refresh");
     } else {
       setStatus(t("app.status.openConversation"));
     }
@@ -101,7 +128,7 @@ export function App({ mode = "side-panel" }: AppProps) {
     setStatus(t("app.status.rebuilding"));
     const message = await requestTurnsFromActiveTab({ ensureFull: true, tabId: sourceTabId });
     if (message?.type === "TURNMAP_TURNS_UPDATED") {
-      applyTurnsMessage(message);
+      applyTurnsMessage(message, "replace");
       setRebuildRequest((request) => request + 1);
     } else {
       setStatus(t("app.status.rebuildFailed"));
@@ -112,7 +139,7 @@ export function App({ mode = "side-panel" }: AppProps) {
     setStatus(t("app.status.deepScanning"));
     const message = await requestTurnsFromActiveTab({ harvest: true, tabId: sourceTabId });
     if (message?.type === "TURNMAP_TURNS_UPDATED") {
-      applyTurnsMessage(message);
+      applyTurnsMessage(message, "deep-scan");
     } else {
       setStatus(t("app.status.deepScanFailed"));
     }
@@ -374,6 +401,7 @@ export function App({ mode = "side-panel" }: AppProps) {
         conversationId={conversationId}
         conversationTitle={conversationTitle}
         turns={turns}
+        turnUpdateMode={turnUpdateMode}
         sourceTabId={sourceTabId}
         rebuildRequest={rebuildRequest}
         onStatus={setStatus}

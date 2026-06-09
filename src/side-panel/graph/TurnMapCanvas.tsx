@@ -109,6 +109,7 @@ type TurnMapCanvasProps = {
   conversationId: string;
   conversationTitle: string;
   turns: Turn[];
+  turnUpdateMode?: "replace" | "refresh" | "deep-scan";
   sourceTabId?: number;
   rebuildRequest?: number;
   onStatus?: (status: string) => void;
@@ -674,6 +675,77 @@ function createLayoutPositions(turns: Turn[], layoutMode: LayoutMode): Record<st
       x: 360 + (topicPositions[turn.id]?.depth ?? index) * 340,
       y: ((topicPositions[turn.id]?.topicIndex ?? 0) - (topicCount - 1) / 2) * 260
     };
+  });
+
+  return positions;
+}
+
+function positionOverlaps(
+  position: { x: number; y: number },
+  positions: Record<string, { x: number; y: number }>,
+  ignoredIds: Set<string>
+): boolean {
+  return Object.entries(positions).some(([nodeId, existing]) => {
+    if (ignoredIds.has(nodeId)) return false;
+    return Math.abs(existing.x - position.x) < 300 && Math.abs(existing.y - position.y) < 210;
+  });
+}
+
+function nonOverlappingPosition(
+  preferred: { x: number; y: number },
+  positions: Record<string, { x: number; y: number }>,
+  ignoredIds: Set<string>
+): { x: number; y: number } {
+  if (!positionOverlaps(preferred, positions, ignoredIds)) return preferred;
+
+  const offsets = [260, -260, 520, -520, 780, -780];
+  for (const offset of offsets) {
+    const candidate = { x: preferred.x, y: preferred.y + offset };
+    if (!positionOverlaps(candidate, positions, ignoredIds)) return candidate;
+  }
+  return preferred;
+}
+
+function deepScanInsertedPositions(
+  turns: Turn[],
+  storedPositions: Record<string, { x: number; y: number }>,
+  layoutMode: LayoutMode
+): Record<string, { x: number; y: number }> {
+  const positions = { ...storedPositions };
+  const layoutPositions = createLayoutPositions(turns, layoutMode);
+
+  turns.forEach((turn, index) => {
+    if (positions[turn.id]) return;
+
+    const previousTurn = turns[index - 1];
+    const nextTurn = turns[index + 1];
+    const previousPosition = previousTurn ? positions[previousTurn.id] : undefined;
+    const nextPosition = nextTurn ? positions[nextTurn.id] : undefined;
+    const ignoredIds = new Set([turn.id]);
+    let preferred = layoutPositions[turn.id] ?? { x: 360, y: index * 190 };
+
+    if (previousPosition && nextPosition) {
+      const gap = nextPosition.x - previousPosition.x;
+      if (Math.abs(gap) >= 560) {
+        preferred = {
+          x: Math.round((previousPosition.x + nextPosition.x) / 2),
+          y: Math.round((previousPosition.y + nextPosition.y) / 2)
+        };
+      } else {
+        preferred = { x: previousPosition.x + 340, y: previousPosition.y };
+        positions[nextTurn.id] = nonOverlappingPosition(
+          { x: preferred.x + 340, y: nextPosition.y },
+          positions,
+          new Set([nextTurn.id, turn.id])
+        );
+      }
+    } else if (previousPosition) {
+      preferred = { x: previousPosition.x + 340, y: previousPosition.y };
+    } else if (nextPosition) {
+      preferred = { x: nextPosition.x - 340, y: nextPosition.y };
+    }
+
+    positions[turn.id] = nonOverlappingPosition(preferred, positions, ignoredIds);
   });
 
   return positions;
@@ -2118,6 +2190,7 @@ export function TurnMapCanvas({
   conversationId,
   conversationTitle,
   turns,
+  turnUpdateMode = "refresh",
   sourceTabId,
   rebuildRequest = 0,
   onStatus,
@@ -2904,6 +2977,10 @@ export function TurnMapCanvas({
         !shouldRebuild && storedGraph?.schemaVersion && storedGraph.schemaVersion >= 2
           ? remapRecordKeys(storedGraph.positions, storedTurnIdMap)
           : {};
+      const activePositions =
+        !shouldRebuild && turnUpdateMode === "deep-scan"
+          ? deepScanInsertedPositions(turns, storedPositions, activeLayout)
+          : storedPositions;
       const storedCustomNodes = shouldRebuild ? [] : (storedGraph?.customNodes ?? []);
       const activeNodeOverrides = shouldRebuild ? {} : remapRecordKeys(storedNodeOverrides, storedTurnIdMap);
       setLayoutMode(activeLayout);
@@ -2930,7 +3007,7 @@ export function TurnMapCanvas({
       const nextNodes = nodesFromTurns(
         conversationTitle,
         turns,
-        storedPositions,
+        activePositions,
         activeNodeOverrides,
         updateNodeText,
         summarizeNode,
@@ -2980,6 +3057,7 @@ export function TurnMapCanvas({
     jumpToNodeTurn,
     t,
     turns,
+    turnUpdateMode,
     updateNodeText
   ]);
 
