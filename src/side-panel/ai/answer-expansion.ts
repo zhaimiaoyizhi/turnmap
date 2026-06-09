@@ -364,6 +364,55 @@ export type MiniMapLayout = {
   nodes: Record<string, MiniLayoutNode>;
 };
 
+export type RenderableMiniLink = AnswerMiniLink & {
+  visualKind: "tree" | "summary";
+};
+
+function nodeMap(expansion: AnswerExpansion): Map<string, AnswerMiniNode> {
+  return new Map(expansion.nodes.map((node) => [node.id, node]));
+}
+
+export function renderableMiniLinks(expansion: AnswerExpansion): RenderableMiniLink[] {
+  const byId = nodeMap(expansion);
+  const links: RenderableMiniLink[] = [];
+  const seen = new Set<string>();
+
+  for (const node of expansion.nodes) {
+    if (!node.parentId || !byId.has(node.parentId)) continue;
+    const relationship: MiniLinkRelationship = node.role === "summary" ? "summary" : "subpoint";
+    const key = `${node.parentId}->${node.id}->tree`;
+    seen.add(key);
+    links.push({
+      id: `mini-tree-${node.parentId}-${node.id}`,
+      source: node.parentId,
+      target: node.id,
+      relationship,
+      weight: relationship === "summary" ? 0.35 : 0.78,
+      visualKind: "tree"
+    });
+  }
+
+  for (const link of expansion.links) {
+    if (link.relationship !== "summary") continue;
+    const source = byId.get(link.source);
+    const target = byId.get(link.target);
+    if (!source || !target || source.id === target.id) continue;
+    if (target.role !== "summary") continue;
+    if (!target.parentId || source.parentId !== target.parentId) continue;
+    if (source.branchId !== target.branchId || source.role === "summary") continue;
+    const key = `${source.id}->${target.id}->summary`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push({
+      ...link,
+      id: link.id || `mini-summary-${source.id}-${target.id}`,
+      visualKind: "summary"
+    });
+  }
+
+  return links;
+}
+
 function subtreeLeafCount(nodeId: string, childrenByParent: Map<string, AnswerMiniNode[]>): number {
   const children = childrenByParent.get(nodeId) ?? [];
   if (children.length === 0) return 1;

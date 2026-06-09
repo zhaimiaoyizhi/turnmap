@@ -7,6 +7,7 @@ import {
   deleteMiniNode,
   miniNodeDescendantIds,
   calculateMiniMapLayout,
+  renderableMiniLinks,
   extractMarkdownOutlineHints,
   MINI_MAP_NODE_WIDTH,
   MINI_MAP_NODE_HEIGHT
@@ -182,6 +183,40 @@ test("calculateMiniMapLayout mirrors child nodes for left expansion", () => {
   assert.equal(MINI_MAP_NODE_HEIGHT, 40);
   assert.ok(layout.width >= 480);
   assert.ok(layout.height >= 280);
+});
+
+test("renderableMiniLinks keeps mini-map lines tied to the visible tree", () => {
+  const expansion = normalizeAnswerExpansion({
+    schemaVersion: 2,
+    nodes: [
+      { id: "lipids", title: "主要磷脂类别", role: "branch", parentId: null, branchId: "lipids" },
+      { id: "pc", title: "PC：常作为背景脂质", role: "point", parentId: "lipids", branchId: "lipids" },
+      { id: "pe", title: "PE：影响膜曲率", role: "point", parentId: "lipids", branchId: "lipids" },
+      { id: "lipid-summary", title: "类别影响识别与命名", role: "summary", parentId: "lipids", branchId: "lipids" },
+      { id: "mechanism", title: "内在调控机制", role: "branch", parentId: null, branchId: "mechanism" },
+      { id: "binding", title: "直接结合改变功能", role: "point", parentId: "mechanism", branchId: "mechanism" }
+    ],
+    links: [
+      { id: "cross-1", source: "pc", target: "binding", relationship: "subpoint" },
+      { id: "cross-2", source: "lipids", target: "mechanism", relationship: "section" },
+      { id: "summary-a", source: "pc", target: "lipid-summary", relationship: "summary" },
+      { id: "summary-b", source: "pe", target: "lipid-summary", relationship: "summary" },
+      { id: "summary-cross", source: "binding", target: "lipid-summary", relationship: "summary" }
+    ]
+  });
+
+  const rendered = renderableMiniLinks(expansion);
+  assert.deepEqual(
+    rendered.map((link) => `${link.source}->${link.target}:${link.visualKind}`),
+    [
+      "lipids->pc:tree",
+      "lipids->pe:tree",
+      "lipids->lipid-summary:tree",
+      "mechanism->binding:tree",
+      "pc->lipid-summary:summary",
+      "pe->lipid-summary:summary"
+    ]
+  );
 });
 
 test("extractMarkdownOutlineHints preserves headings, bold labels, and label details", () => {

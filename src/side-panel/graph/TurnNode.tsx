@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type MouseEvent } from "react";
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import {
   calculateMiniMapLayout,
+  renderableMiniLinks,
   type AnswerExpansion,
   type AnswerMiniNode
 } from "../ai/answer-expansion";
@@ -210,11 +211,12 @@ function MiniMindMap({
 }) {
   const layout = calculateMiniMapLayout(expansion);
   const nodeById = new Map(expansion.nodes.map((node) => [node.id, node]));
+  const visibleLinks = renderableMiniLinks(expansion);
   const summaryTargets = new Set(
-    expansion.links
-      .filter((link) => link.relationship === "summary")
+    visibleLinks
+      .filter((link) => link.visualKind === "summary")
       .map((link) => link.target)
-      .filter((targetId) => expansion.links.filter((link) => link.relationship === "summary" && link.target === targetId).length >= 2)
+      .filter((targetId) => visibleLinks.filter((link) => link.visualKind === "summary" && link.target === targetId).length >= 2)
   );
 
   return (
@@ -226,7 +228,7 @@ function MiniMindMap({
       onClick={(event) => event.stopPropagation()}
     >
       <svg className="turn-node__mini-links" aria-hidden="true" width={layout.width} height={layout.height}>
-        {expansion.links.map((link, index) => {
+        {visibleLinks.map((link, index) => {
           const sourceLayout = layout.nodes[link.source];
           const targetLayout = layout.nodes[link.target];
           const source = nodeById.get(link.source);
@@ -239,7 +241,7 @@ function MiniMindMap({
           const sourceY = sourceLayout.y + sourceLayout.height / 2;
           const targetY = targetLayout.y + targetLayout.height / 2;
           const midX = sourceX + direction * Math.max(34, Math.abs(targetX - sourceX) / 2);
-          const isSummary = link.relationship === "summary";
+          const isSummary = link.visualKind === "summary";
           if (isSummary && summaryTargets.has(link.target)) return null;
           return (
             <path
@@ -254,8 +256,8 @@ function MiniMindMap({
           const targetLayout = layout.nodes[targetId];
           const target = nodeById.get(targetId);
           if (!targetLayout || !target) return null;
-          const sources = expansion.links
-            .filter((link) => link.relationship === "summary" && link.target === targetId)
+          const sources = visibleLinks
+            .filter((link) => link.visualKind === "summary" && link.target === targetId)
             .map((link) => layout.nodes[link.source])
             .filter(Boolean);
           if (sources.length < 2) return null;

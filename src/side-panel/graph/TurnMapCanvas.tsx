@@ -18,6 +18,7 @@ import { jumpToTurnInActiveTab } from "../../shared/messaging";
 import {
   calculateMiniMapLayout,
   deleteMiniNode,
+  renderableMiniLinks,
   type AnswerExpansionProgressStage,
   expandTurnAnswer,
   miniNodeDescendantIds,
@@ -1490,17 +1491,18 @@ function renderMiniMapSvg(
   if (expansion?.displayMode !== "expanded") return "";
   const layout = calculateMiniMapLayout(expansion);
   const nodeById = new Map(expansion.nodes.map((miniNode) => [miniNode.id, miniNode]));
+  const visibleLinks = renderableMiniLinks(expansion);
   const direction = expansion.layoutDirection === "left" ? -1 : 1;
   const theme = SVG_THEME_COLORS[appearance?.resolvedTheme ?? "day"];
   const colorMix = svgColorMixStrength(appearance);
   const summaryTargets = new Set(
-    expansion.links
-      .filter((link) => link.relationship === "summary")
+    visibleLinks
+      .filter((link) => link.visualKind === "summary")
       .map((link) => link.target)
-      .filter((targetId) => expansion.links.filter((link) => link.relationship === "summary" && link.target === targetId).length >= 2)
+      .filter((targetId) => visibleLinks.filter((link) => link.visualKind === "summary" && link.target === targetId).length >= 2)
   );
 
-  const linkMarkup = expansion.links
+  const linkMarkup = visibleLinks
     .map((link) => {
       const sourceLayout = layout.nodes[link.source];
       const targetLayout = layout.nodes[link.target];
@@ -1513,7 +1515,7 @@ function renderMiniMapSvg(
       const sourceY = mapY + sourceLayout.y + sourceLayout.height / 2;
       const targetY = mapY + targetLayout.y + targetLayout.height / 2;
       const midX = sourceX + direction * Math.max(28, Math.abs(targetX - sourceX) / 2);
-      const isSummary = link.relationship === "summary";
+      const isSummary = link.visualKind === "summary";
       if (isSummary && summaryTargets.has(link.target)) return "";
       return `<path class="mini-link${isSummary ? " mini-link-summary" : ""}" d="M ${sourceX} ${sourceY} C ${midX} ${sourceY}, ${midX} ${targetY}, ${targetX} ${targetY}" stroke="${sourceColor}" />`;
     })
@@ -1524,8 +1526,8 @@ function renderMiniMapSvg(
       const targetLayout = layout.nodes[targetId];
       const target = nodeById.get(targetId);
       if (!targetLayout || !target) return "";
-      const sources = expansion.links
-        .filter((link) => link.relationship === "summary" && link.target === targetId)
+      const sources = visibleLinks
+        .filter((link) => link.visualKind === "summary" && link.target === targetId)
         .map((link) => layout.nodes[link.source])
         .filter(Boolean);
       if (sources.length < 2) return "";
