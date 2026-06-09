@@ -8,7 +8,7 @@ TurnMap is an Edge-first browser extension that maps the current AI conversation
 
 > Status: early preview. TurnMap is not yet published to Edge Add-ons or Chrome Web Store. Install it manually from source or from a GitHub Release package.
 
-![TurnMap turns a long web AI conversation into an editable mind map](docs/assets/github-social-preview.png)
+![TurnMap turns a long web AI conversation into an editable mind map](docs/assets/github-social-preview.png?v=20260609)
 
 TurnMap keeps the original chat close by while giving you a map you can scan, edit, color, expand, and export.
 
@@ -42,7 +42,7 @@ It currently maps the active conversation on supported AI websites. Cross-conver
 
 TurnMap turns a single long web AI thread into a navigable graph. The map keeps conversation order, topic structure, source jumping, and your own edits in one workspace.
 
-![A long AI conversation mapped into TurnMap with node actions and an expanded answer mini mind map](docs/assets/github-social-preview.png)
+![A long AI conversation mapped into TurnMap with node actions and an expanded answer mini mind map](docs/assets/github-social-preview.png?v=20260609)
 
 ### Expand Answers Into Mini Mind Maps
 
