@@ -8,7 +8,7 @@ import { TurnMapCanvas } from "./graph/TurnMapCanvas";
 import { useI18n } from "./i18n/useI18n";
 import { applyTheme, loadTheme, normalizeTheme, THEME_STORAGE_KEY } from "./settings/theme-storage";
 import { applyNodeColorRendering, loadUiSettings } from "./settings/ui-settings-storage";
-import { saveTurnsToIndexedDb } from "./storage/turn-storage";
+import { loadTurnsFromIndexedDb, saveTurnsToIndexedDb } from "./storage/turn-storage";
 import {
   buildApiTaskLogExport,
   loadApiTaskLog,
@@ -46,6 +46,12 @@ function downloadTextFile(filename: string, content: string, type: string): void
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function canUseConversationIdForSwitch(nextConversationId: string, currentConversationId: string): boolean {
+  if (!nextConversationId || nextConversationId === currentConversationId) return false;
+  if (nextConversationId === "current" && currentConversationId !== "current") return false;
+  return true;
 }
 
 export function App({ mode = "side-panel" }: AppProps) {
@@ -111,15 +117,85 @@ export function App({ mode = "side-panel" }: AppProps) {
     );
   }, [t]);
 
+  const applyCachedConversation = useCallback(
+    async (conversationIdToLoad: string): Promise<boolean> => {
+      const cached = await loadTurnsFromIndexedDb(conversationIdToLoad).catch(() => null);
+      if (!cached || cached.turns.length === 0) return false;
+
+      applyTurnsMessage(
+        {
+          type: "TURNMAP_TURNS_UPDATED",
+          turns: cached.turns,
+          conversationId: cached.conversationId,
+          conversationTitle: cached.conversationTitle,
+          harvestMeta: {
+            attempted: false,
+            source: "indexeddb",
+            scrollContainer: "none",
+            scrollHeight: 0,
+            clientHeight: 0,
+            scannedSteps: 0
+          }
+        },
+        "replace"
+      );
+      setStatus(t("app.status.restoredConversation", { count: cached.turns.length }));
+      return true;
+    },
+    [applyTurnsMessage, t]
+  );
+
+  const applyConversationRead = useCallback(
+    async (message: ExtractedTurnsMessage, mode: "refresh" | "deep-scan"): Promise<boolean> => {
+      if (message.site?.id === "unsupported") {
+        applyTurnsMessage(message, mode);
+        return false;
+      }
+
+      const isSwitch = canUseConversationIdForSwitch(message.conversationId, conversationId);
+      if (!isSwitch) {
+        applyTurnsMessage(message, mode);
+        return true;
+      }
+
+      if (await applyCachedConversation(message.conversationId)) {
+        if (message.turns.length > 0) applyTurnsMessage(message, mode);
+        return true;
+      }
+
+      if (mode === "deep-scan") {
+        if (message.turns.length === 0) {
+          setStatus(t("app.status.switchReadFailed"));
+          return false;
+        }
+        applyTurnsMessage(message, "replace");
+        setStatus(t("app.status.switchCreated", { count: message.turns.length }));
+        return true;
+      }
+
+      setStatus(t("app.status.switchDeepScanning"));
+      const scanned = await requestTurnsFromActiveTab({ harvest: true, tabId: sourceTabId });
+      if (scanned?.type === "TURNMAP_TURNS_UPDATED" && scanned.turns.length > 0) {
+        applyTurnsMessage(scanned, "replace");
+        setStatus(t("app.status.switchCreated", { count: scanned.turns.length }));
+        return true;
+      }
+
+      setStatus(t("app.status.switchReadFailed"));
+      return false;
+    },
+    [applyCachedConversation, applyTurnsMessage, conversationId, sourceTabId, t]
+  );
+
   const refreshTurns = useCallback(async () => {
     setStatus(t("app.status.reading"));
     const message = await requestTurnsFromActiveTab({ tabId: sourceTabId });
     if (message?.type === "TURNMAP_TURNS_UPDATED") {
-      applyTurnsMessage(message, "refresh");
+      await applyConversationRead(message, "refresh");
     } else {
       setStatus(t("app.status.openConversation"));
     }
-  }, [applyTurnsMessage, sourceTabId, t]);
+  }, [applyConversationRead, sourceTabId, t]);
 
   const rebuildMap = useCallback(async () => {
     const confirmed = window.confirm(t("app.confirm.rebuild"));
@@ -139,11 +215,11 @@ export function App({ mode = "side-panel" }: AppProps) {
     setStatus(t("app.status.deepScanning"));
     const message = await requestTurnsFromActiveTab({ harvest: true, tabId: sourceTabId });
     if (message?.type === "TURNMAP_TURNS_UPDATED") {
-      applyTurnsMessage(message, "deep-scan");
+      await applyConversationRead(message, "deep-scan");
     } else {
       setStatus(t("app.status.deepScanFailed"));
     }
-  }, [applyTurnsMessage, sourceTabId, t]);
+  }, [applyConversationRead, sourceTabId, t]);
 
   const openFullPage = useCallback(async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -269,13 +345,15 @@ export function App({ mode = "side-panel" }: AppProps) {
     const listener = (message: unknown) => {
       if (!isTurnMapMessage(message)) return;
       if (message.type === "TURNMAP_TURNS_UPDATED") {
-        applyTurnsMessage(message as ExtractedTurnsMessage);
+        const turnsMessage = message as ExtractedTurnsMessage;
+        if (canUseConversationIdForSwitch(turnsMessage.conversationId, conversationId)) return;
+        applyTurnsMessage(turnsMessage);
       }
     };
 
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, [applyTurnsMessage, refreshTurns]);
+  }, [applyTurnsMessage, conversationId, refreshTurns]);
 
   const hasTurns = turns.length > 0;
   const siteName = lastMessage?.site?.displayName ?? "unknown";
