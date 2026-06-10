@@ -626,6 +626,21 @@ test("ChatGPT jump direction can use visible user-only markers before scroll-rat
   assert.match(lookup, /markerMatchesAnchor\(marker, anchor\)/);
 });
 
+test("jump lazy search uses bounded adaptive steps for short conversations", () => {
+  const chatGptJump = readFileSync(new URL("../src/content/jump-controller.ts", import.meta.url), "utf8");
+  const webAdapter = readFileSync(new URL("../src/content/web-adapter-core.ts", import.meta.url), "utf8");
+
+  assert.match(chatGptJump, /function jumpSearchDelta/);
+  assert.match(chatGptJump, /function jumpSearchStepLimit/);
+  assert.match(chatGptJump, /await delay\(120\)/);
+  assert.doesNotMatch(chatGptJump, /clientHeight \* 0\.85, 650/);
+  assert.doesNotMatch(chatGptJump, /await delay\(260\)/);
+
+  assert.match(webAdapter, /function webJumpSearchDelta/);
+  assert.match(webAdapter, /function webJumpSearchStepLimit/);
+  assert.doesNotMatch(webAdapter, /clientHeight \* 0\.75, 480/);
+});
+
 test("ChatGPT extractor combines multiple markdown blocks from one assistant message", () => {
   const source = readFileSync(new URL("../src/content/turn-extractor.ts", import.meta.url), "utf8");
 

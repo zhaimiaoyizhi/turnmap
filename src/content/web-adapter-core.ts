@@ -1022,6 +1022,19 @@ function revealWebTurnElement(element: HTMLElement, scrollElement?: HTMLElement)
   }, 2200);
 }
 
+function webJumpSearchDelta(scrollElement: HTMLElement): number {
+  const scrollRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+  const viewport = Math.max(240, scrollElement.clientHeight || 0);
+  if (scrollRange <= viewport * 2.5) return Math.max(160, Math.min(360, viewport * 0.35));
+  return Math.max(340, Math.min(720, viewport * 0.62));
+}
+
+function webJumpSearchStepLimit(scrollElement: HTMLElement, requestedMaxSteps: number): number {
+  const scrollRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+  const byDistance = Math.ceil(scrollRange / Math.max(1, webJumpSearchDelta(scrollElement))) + 3;
+  return Math.max(2, Math.min(requestedMaxSteps, byDistance));
+}
+
 async function searchWebTurnInDirection(
   anchor: SourceAnchor,
   knownTurns: Turn[],
@@ -1030,12 +1043,15 @@ async function searchWebTurnInDirection(
   direction: "up" | "down",
   maxSteps: number
 ): Promise<HTMLElement | null> {
-  for (let step = 0; step < maxSteps; step += 1) {
+  const boundedMaxSteps = webJumpSearchStepLimit(scrollElement, maxSteps);
+  let blockedSteps = 0;
+
+  for (let step = 0; step < boundedMaxSteps; step += 1) {
     const candidate = findWebTurnElement(anchor, knownTurns, profile);
     if (candidate) return candidate;
 
     const currentTop = scrollElement.scrollTop;
-    const delta = Math.max(scrollElement.clientHeight * 0.75, 480);
+    const delta = webJumpSearchDelta(scrollElement);
     const nextTop =
       direction === "up"
         ? Math.max(0, currentTop - delta)
@@ -1044,7 +1060,13 @@ async function searchWebTurnInDirection(
     if (Math.abs(nextTop - currentTop) < 4) break;
 
     scrollElement.scrollTo({ top: nextTop, behavior: "instant" });
-    await delay(260);
+    await delay(120);
+    if (Math.abs(scrollElement.scrollTop - currentTop) < 4) {
+      blockedSteps += 1;
+      if (blockedSteps >= 2) break;
+    } else {
+      blockedSteps = 0;
+    }
   }
 
   return null;

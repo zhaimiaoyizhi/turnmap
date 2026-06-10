@@ -66,6 +66,19 @@ function highlightElement(element: HTMLElement, sequence: number): void {
   }, 2200);
 }
 
+function jumpSearchDelta(scrollElement: HTMLElement): number {
+  const scrollRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+  const viewport = Math.max(240, scrollElement.clientHeight || 0);
+  if (scrollRange <= viewport * 2.5) return Math.max(160, Math.min(360, viewport * 0.35));
+  return Math.max(360, Math.min(760, viewport * 0.65));
+}
+
+function jumpSearchStepLimit(scrollElement: HTMLElement, requestedMaxSteps: number): number {
+  const scrollRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+  const byDistance = Math.ceil(scrollRange / Math.max(1, jumpSearchDelta(scrollElement))) + 3;
+  return Math.max(2, Math.min(requestedMaxSteps, byDistance));
+}
+
 async function findTurnElementWithLazyScroll(
   anchor: SourceAnchor,
   sequence: number
@@ -121,11 +134,17 @@ async function searchInDirection(
   maxSteps: number,
   sequence: number
 ): Promise<HTMLElement | null> {
-  for (let step = 0; step < maxSteps; step += 1) {
+  const boundedMaxSteps = jumpSearchStepLimit(scrollElement, maxSteps);
+  let blockedSteps = 0;
+
+  for (let step = 0; step < boundedMaxSteps; step += 1) {
     if (!isCurrentJump(sequence)) return null;
 
+    const visible = findTurnElement(anchor, getLatestTurns());
+    if (visible) return visible;
+
     const currentTop = scrollElement.scrollTop;
-    const delta = Math.max(scrollElement.clientHeight * 0.85, 650);
+    const delta = jumpSearchDelta(scrollElement);
     const nextTop =
       direction === "up"
         ? Math.max(0, currentTop - delta)
@@ -137,13 +156,18 @@ async function searchInDirection(
       top: nextTop,
       behavior: "instant"
     });
-    await delay(260);
+    await delay(120);
     if (!isCurrentJump(sequence)) return null;
 
     const found = findTurnElement(anchor, getLatestTurns());
     if (found) return found;
 
-    if (Math.abs(scrollElement.scrollTop - currentTop) < 4) break;
+    if (Math.abs(scrollElement.scrollTop - currentTop) < 4) {
+      blockedSteps += 1;
+      if (blockedSteps >= 2) break;
+    } else {
+      blockedSteps = 0;
+    }
   }
 
   return null;
