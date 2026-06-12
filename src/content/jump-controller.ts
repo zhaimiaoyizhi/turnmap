@@ -1,5 +1,6 @@
 ﻿import type { JumpToTurnResult, SourceAnchor } from "../shared/types";
 import { getLatestTurns } from "./chatgpt-observer";
+import { loadReadingBehaviorSettings } from "../shared/reading-settings.ts";
 import { getChatScrollElement } from "./scroll-container";
 import { findTurnElement, getVisibleTurnIndexRange } from "./turn-extractor";
 
@@ -66,16 +67,17 @@ function highlightElement(element: HTMLElement, sequence: number): void {
   }, 2200);
 }
 
-function jumpSearchDelta(scrollElement: HTMLElement): number {
+function jumpSearchDelta(scrollElement: HTMLElement, strength: number): number {
   const scrollRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
   const viewport = Math.max(240, scrollElement.clientHeight || 0);
-  if (scrollRange <= viewport * 2.5) return Math.max(160, Math.min(360, viewport * 0.35));
-  return Math.max(360, Math.min(760, viewport * 0.65));
+  const safeStrength = Math.max(0.5, Math.min(2, strength));
+  if (scrollRange <= viewport * 2.5) return Math.max(120, Math.min(560, viewport * 0.35 * safeStrength));
+  return Math.max(260, Math.min(1200, viewport * 0.65 * safeStrength));
 }
 
-function jumpSearchStepLimit(scrollElement: HTMLElement, requestedMaxSteps: number): number {
+function jumpSearchStepLimit(scrollElement: HTMLElement, requestedMaxSteps: number, strength: number): number {
   const scrollRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
-  const byDistance = Math.ceil(scrollRange / Math.max(1, jumpSearchDelta(scrollElement))) + 3;
+  const byDistance = Math.ceil(scrollRange / Math.max(1, jumpSearchDelta(scrollElement, strength))) + 3;
   return Math.max(2, Math.min(requestedMaxSteps, byDistance));
 }
 
@@ -90,13 +92,15 @@ async function findTurnElementWithLazyScroll(
   const scrollElement = getChatScrollElement();
   const originalTop = scrollElement.scrollTop;
   const direction = getSearchDirection(anchor, scrollElement);
+  const settings = await loadReadingBehaviorSettings();
+  const strength = settings.jumpSearchStrength;
 
-  const directedResult = await searchInDirection(anchor, scrollElement, direction, 90, sequence);
+  const directedResult = await searchInDirection(anchor, scrollElement, direction, 90, sequence, strength);
   if (directedResult) return directedResult;
   if (!isCurrentJump(sequence)) return null;
 
   const fallbackDirection = direction === "up" ? "down" : "up";
-  const fallbackResult = await searchInDirection(anchor, scrollElement, fallbackDirection, 45, sequence);
+  const fallbackResult = await searchInDirection(anchor, scrollElement, fallbackDirection, 45, sequence, strength);
   if (fallbackResult) return fallbackResult;
   if (!isCurrentJump(sequence)) return null;
 
@@ -132,9 +136,10 @@ async function searchInDirection(
   scrollElement: HTMLElement,
   direction: "up" | "down",
   maxSteps: number,
-  sequence: number
+  sequence: number,
+  strength: number
 ): Promise<HTMLElement | null> {
-  const boundedMaxSteps = jumpSearchStepLimit(scrollElement, maxSteps);
+  const boundedMaxSteps = jumpSearchStepLimit(scrollElement, maxSteps, strength);
   let blockedSteps = 0;
 
   for (let step = 0; step < boundedMaxSteps; step += 1) {
@@ -144,7 +149,7 @@ async function searchInDirection(
     if (visible) return visible;
 
     const currentTop = scrollElement.scrollTop;
-    const delta = jumpSearchDelta(scrollElement);
+    const delta = jumpSearchDelta(scrollElement, strength);
     const nextTop =
       direction === "up"
         ? Math.max(0, currentTop - delta)

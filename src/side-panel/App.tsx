@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ExtractedTurnsMessage, Turn } from "../shared/types";
+import { loadReadingBehaviorSettings } from "../shared/reading-settings.ts";
 import { useRef } from "react";
 import { isTurnMapMessage, requestTurnsFromActiveTab, setFloatingPanelInTab } from "../shared/messaging";
 import { Icon } from "./components/Icon";
@@ -251,7 +252,8 @@ export function App({ mode = "side-panel" }: AppProps) {
     await chrome.runtime.openOptionsPage();
   }, []);
 
-  const exportDebugReport = useCallback(() => {
+  const exportDebugReport = useCallback(async () => {
+    const readingBehavior = await loadReadingBehaviorSettings();
     const report = buildDebugReport({
       conversationTitle,
       conversationId,
@@ -261,7 +263,8 @@ export function App({ mode = "side-panel" }: AppProps) {
       status,
       userAgent: navigator.userAgent,
       extensionVersion: chrome.runtime.getManifest().version,
-      taskLog
+      taskLog,
+      readingBehavior
     });
     const filename = `${safeFilePart(conversationTitle)}.turnmap-debug.md`;
     downloadTextFile(filename, report, "text/markdown;charset=utf-8");
@@ -463,7 +466,7 @@ export function App({ mode = "side-panel" }: AppProps) {
             ))}
           </div>
           <div className="debug-panel__actions">
-            <button className="button-with-icon debug-panel__button" type="button" onClick={exportDebugReport}>
+            <button className="button-with-icon debug-panel__button" type="button" onClick={() => void exportDebugReport()}>
               <Icon name="download" />
               <span>{t("debug.exportReport")}</span>
             </button>

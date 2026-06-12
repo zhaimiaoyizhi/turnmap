@@ -7,6 +7,12 @@ import {
   saveUiSettings,
   type UiSettings
 } from "../side-panel/settings/ui-settings-storage";
+import {
+  READING_BEHAVIOR_DEFAULTS,
+  normalizeEdgeWaitSeconds,
+  normalizeJumpSearchStrength,
+  normalizeScrollSpeedMultiplier
+} from "../shared/reading-settings.ts";
 import { THEME_OPTIONS, applyTheme } from "../side-panel/settings/theme-storage";
 import { useI18n } from "../side-panel/i18n/useI18n";
 import {
@@ -53,6 +59,100 @@ const THEME_LABEL_KEYS = {
   night: "settings.theme.night",
   "eye-care": "settings.theme.eyeCare"
 } satisfies Record<(typeof THEME_OPTIONS)[number]["value"], I18nKey>;
+
+function edgeWaitSecondsToSliderValue(seconds: number): number {
+  const value = normalizeEdgeWaitSeconds(seconds);
+  if (value <= 2) return (value / 2) * 50;
+  if (value <= 8) return 50 + ((value - 2) / 6) * 30;
+  return 80 + ((value - 8) / 12) * 20;
+}
+
+function edgeWaitSliderValueToSeconds(value: number): number {
+  const sliderValue = Math.max(0, Math.min(100, value));
+  if (sliderValue <= 50) return normalizeEdgeWaitSeconds((sliderValue / 50) * 2);
+  if (sliderValue <= 80) return normalizeEdgeWaitSeconds(2 + ((sliderValue - 50) / 30) * 6);
+  return normalizeEdgeWaitSeconds(8 + ((sliderValue - 80) / 20) * 12);
+}
+
+type NumericSliderSettingProps = {
+  label: string;
+  description: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  suffix: string;
+  sliderValue?: number;
+  sliderMin?: number;
+  sliderMax?: number;
+  sliderStep?: number;
+  onSliderChange?: (value: number) => void;
+  onChange: (value: number) => void;
+  normalize: (value: unknown) => number;
+};
+
+function NumericSliderSetting({
+  label,
+  description,
+  value,
+  min,
+  max,
+  step,
+  suffix,
+  sliderValue,
+  sliderMin,
+  sliderMax,
+  sliderStep,
+  onSliderChange,
+  onChange,
+  normalize
+}: NumericSliderSettingProps) {
+  const [draftValue, setDraftValue] = useState(String(value));
+
+  useEffect(() => {
+    setDraftValue(String(value));
+  }, [value]);
+
+  return (
+    <label className="settings-range-control">
+      <span>{label}</span>
+      <div className="settings-range-control__row">
+        <input
+          type="range"
+          min={sliderMin ?? min}
+          max={sliderMax ?? max}
+          step={sliderStep ?? step}
+          value={sliderValue ?? value}
+          onChange={(event) =>
+            onSliderChange ? onSliderChange(Number(event.currentTarget.value)) : onChange(normalize(event.currentTarget.value))
+          }
+        />
+        <div className="settings-number-input">
+          <input
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            value={draftValue}
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value;
+              setDraftValue(nextValue);
+              const numeric = Number(nextValue);
+              if (Number.isFinite(numeric)) onChange(numeric);
+            }}
+            onBlur={(event) => {
+              const normalized = normalize(event.currentTarget.value);
+              setDraftValue(String(normalized));
+              onChange(normalized);
+            }}
+          />
+          <span>{suffix}</span>
+        </div>
+      </div>
+      <p>{description}</p>
+    </label>
+  );
+}
 
 function SettingsPage() {
   const { t } = useI18n();
@@ -109,6 +209,11 @@ function SettingsPage() {
     await saveLanguageMode(languageMode);
     setStatus(t("settings.status.interfaceSaved"));
   }, [languageMode, settings, t]);
+
+  const resetReadingBehavior = useCallback(() => {
+    update({ ...READING_BEHAVIOR_DEFAULTS });
+    setStatus(t("settings.readingDefaultsRestored"));
+  }, [t, update]);
 
   const changeLanguage = useCallback(async (mode: LanguageMode) => {
     setLanguageMode(mode);
@@ -361,6 +466,52 @@ function SettingsPage() {
                   />
                   <span>{settings.nodeColorRenderStrength}%</span>
                 </label>
+              </fieldset>
+
+              <fieldset className="settings-fieldset">
+                <legend>{t("settings.readingJumping")}</legend>
+                <p>{t("settings.readingJumpingHint")}</p>
+                <NumericSliderSetting
+                  label={t("settings.scrollSpeedMultiplier")}
+                  description={t("settings.scrollSpeedMultiplierHint")}
+                  value={settings.scrollSpeedMultiplier}
+                  min={0.5}
+                  max={2}
+                  step={0.1}
+                  suffix="x"
+                  onChange={(value) => update({ scrollSpeedMultiplier: value })}
+                  normalize={normalizeScrollSpeedMultiplier}
+                />
+                <NumericSliderSetting
+                  label={t("settings.edgeWaitSeconds")}
+                  description={t("settings.edgeWaitSecondsHint")}
+                  value={settings.edgeWaitSeconds}
+                  min={0}
+                  max={20}
+                  step={0.1}
+                  suffix="s"
+                  sliderValue={edgeWaitSecondsToSliderValue(settings.edgeWaitSeconds)}
+                  sliderMin={0}
+                  sliderMax={100}
+                  sliderStep={1}
+                  onSliderChange={(value) => update({ edgeWaitSeconds: edgeWaitSliderValueToSeconds(value) })}
+                  onChange={(value) => update({ edgeWaitSeconds: value })}
+                  normalize={normalizeEdgeWaitSeconds}
+                />
+                <NumericSliderSetting
+                  label={t("settings.jumpSearchStrength")}
+                  description={t("settings.jumpSearchStrengthHint")}
+                  value={settings.jumpSearchStrength}
+                  min={0.5}
+                  max={2}
+                  step={0.1}
+                  suffix="x"
+                  onChange={(value) => update({ jumpSearchStrength: value })}
+                  normalize={normalizeJumpSearchStrength}
+                />
+                <button type="button" onClick={resetReadingBehavior}>
+                  {t("settings.restoreReadingDefaults")}
+                </button>
               </fieldset>
 
               <label className="settings-panel__check">

@@ -1,5 +1,6 @@
 ﻿import type { ConversationSite } from "./adapter-registry";
 import type { JumpToTurnResult, SourceAnchor, Turn } from "../shared/types";
+import { loadReadingBehaviorSettings } from "../shared/reading-settings.ts";
 import { stableTurnIdAssigner } from "../shared/turn-id.ts";
 import { smartHarvestByScrolling } from "./smart-scroll-harvest.ts";
 
@@ -815,13 +816,15 @@ export async function harvestWebTurnsByScrolling(profile: WebConversationProfile
 }> {
   const scrollElement = getWebChatScrollElement(profile);
   const originalTop = scrollElement.scrollTop;
+  const settings = await loadReadingBehaviorSettings();
   const result = await (async () => {
     try {
       return await smartHarvestByScrolling({
         scrollElement,
         collectTurns: () => extractTurnsFromDocument(profile),
         mergeTurns: mergeWebTurns,
-        normalizeTurns: normalizeWebTurnIndexes
+        normalizeTurns: normalizeWebTurnIndexes,
+        settings
       });
     } finally {
       scrollElement.scrollTo({ top: originalTop, behavior: "instant" });
@@ -1022,16 +1025,17 @@ function revealWebTurnElement(element: HTMLElement, scrollElement?: HTMLElement)
   }, 2200);
 }
 
-function webJumpSearchDelta(scrollElement: HTMLElement): number {
+function webJumpSearchDelta(scrollElement: HTMLElement, strength: number): number {
   const scrollRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
   const viewport = Math.max(240, scrollElement.clientHeight || 0);
-  if (scrollRange <= viewport * 2.5) return Math.max(160, Math.min(360, viewport * 0.35));
-  return Math.max(340, Math.min(720, viewport * 0.62));
+  const safeStrength = Math.max(0.5, Math.min(2, strength));
+  if (scrollRange <= viewport * 2.5) return Math.max(120, Math.min(560, viewport * 0.35 * safeStrength));
+  return Math.max(240, Math.min(1150, viewport * 0.62 * safeStrength));
 }
 
-function webJumpSearchStepLimit(scrollElement: HTMLElement, requestedMaxSteps: number): number {
+function webJumpSearchStepLimit(scrollElement: HTMLElement, requestedMaxSteps: number, strength: number): number {
   const scrollRange = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
-  const byDistance = Math.ceil(scrollRange / Math.max(1, webJumpSearchDelta(scrollElement))) + 3;
+  const byDistance = Math.ceil(scrollRange / Math.max(1, webJumpSearchDelta(scrollElement, strength))) + 3;
   return Math.max(2, Math.min(requestedMaxSteps, byDistance));
 }
 
@@ -1041,9 +1045,10 @@ async function searchWebTurnInDirection(
   profile: WebConversationProfile,
   scrollElement: HTMLElement,
   direction: "up" | "down",
-  maxSteps: number
+  maxSteps: number,
+  strength: number
 ): Promise<HTMLElement | null> {
-  const boundedMaxSteps = webJumpSearchStepLimit(scrollElement, maxSteps);
+  const boundedMaxSteps = webJumpSearchStepLimit(scrollElement, maxSteps, strength);
   let blockedSteps = 0;
 
   for (let step = 0; step < boundedMaxSteps; step += 1) {
@@ -1051,7 +1056,7 @@ async function searchWebTurnInDirection(
     if (candidate) return candidate;
 
     const currentTop = scrollElement.scrollTop;
-    const delta = webJumpSearchDelta(scrollElement);
+    const delta = webJumpSearchDelta(scrollElement, strength);
     const nextTop =
       direction === "up"
         ? Math.max(0, currentTop - delta)
@@ -1084,12 +1089,22 @@ export async function scrollToWebTurn(
   }
 
   const scrollCandidates = getWebChatScrollCandidates(profile);
+  const settings = await loadReadingBehaviorSettings();
+  const strength = settings.jumpSearchStrength;
 
   for (const scrollElement of scrollCandidates) {
     const originalTop = scrollElement.scrollTop;
     const direction = getWebSearchDirection(anchor, knownTurns, profile, scrollElement);
 
-    const directedCandidate = await searchWebTurnInDirection(anchor, knownTurns, profile, scrollElement, direction, 120);
+    const directedCandidate = await searchWebTurnInDirection(
+      anchor,
+      knownTurns,
+      profile,
+      scrollElement,
+      direction,
+      120,
+      strength
+    );
     if (directedCandidate) {
       revealWebTurnElement(directedCandidate, scrollElement);
       return { ok: true };
@@ -1105,7 +1120,8 @@ export async function scrollToWebTurn(
       profile,
       scrollElement,
       fallbackDirection,
-      60
+      60,
+      strength
     );
     if (fallbackCandidate) {
       revealWebTurnElement(fallbackCandidate, scrollElement);

@@ -1,5 +1,11 @@
 ﻿import { loadDefaultLayout, saveDefaultLayout, type LayoutMode } from "../graph/graph-storage";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, normalizeTheme, type ThemeMode } from "./theme-storage";
+import {
+  READING_BEHAVIOR_DEFAULTS,
+  loadReadingBehaviorSettings,
+  saveReadingBehaviorSettings,
+  type ReadingBehaviorSettings
+} from "../../shared/reading-settings.ts";
 
 const FLOATING_PANEL_ENABLED_KEY = "turnmap.floatingPanel.enabled";
 const LAUNCHER_ENABLED_KEY = "turnmap.launcher.enabled";
@@ -25,7 +31,7 @@ export const UI_SETTINGS_STORAGE_KEYS = [
 export type NodeColorRenderMode = "gradient" | "solid";
 export type LinkConnectionStyle = "curved" | "angled";
 
-export type UiSettings = {
+export type UiSettings = ReadingBehaviorSettings & {
   defaultLayout: LayoutMode;
   theme: ThemeMode;
   floatingPanelEnabled: boolean;
@@ -53,12 +59,14 @@ export function normalizeLinkConnectionStyle(value: unknown): LinkConnectionStyl
 }
 
 export async function loadUiSettings(): Promise<UiSettings> {
-  const [defaultLayout, stored] = await Promise.all([
+  const [defaultLayout, stored, readingBehavior] = await Promise.all([
     loadDefaultLayout(),
-    chrome.storage.local.get([...UI_SETTINGS_STORAGE_KEYS])
+    chrome.storage.local.get([...UI_SETTINGS_STORAGE_KEYS]),
+    loadReadingBehaviorSettings()
   ]);
 
   return {
+    ...readingBehavior,
     defaultLayout,
     theme: normalizeTheme(stored[THEME_STORAGE_KEY] ?? DEFAULT_THEME),
     floatingPanelEnabled: Boolean(stored[FLOATING_PANEL_ENABLED_KEY]),
@@ -75,6 +83,11 @@ export async function loadUiSettings(): Promise<UiSettings> {
 export async function saveUiSettings(settings: UiSettings): Promise<void> {
   await Promise.all([
     saveDefaultLayout(settings.defaultLayout),
+    saveReadingBehaviorSettings({
+      scrollSpeedMultiplier: settings.scrollSpeedMultiplier ?? READING_BEHAVIOR_DEFAULTS.scrollSpeedMultiplier,
+      edgeWaitSeconds: settings.edgeWaitSeconds ?? READING_BEHAVIOR_DEFAULTS.edgeWaitSeconds,
+      jumpSearchStrength: settings.jumpSearchStrength ?? READING_BEHAVIOR_DEFAULTS.jumpSearchStrength
+    }),
     chrome.storage.local.set({
       [FLOATING_PANEL_ENABLED_KEY]: settings.floatingPanelEnabled,
       [LAUNCHER_ENABLED_KEY]: settings.launcherEnabled,

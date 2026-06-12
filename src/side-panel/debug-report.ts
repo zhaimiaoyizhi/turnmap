@@ -1,5 +1,6 @@
 ﻿import type { ExtractedTurnsMessage } from "../shared/types";
 import type { ApiTaskLogEntry } from "./task-log";
+import type { ReadingBehaviorSettings } from "../shared/reading-settings.ts";
 
 type DebugReportInput = {
   conversationTitle: string;
@@ -12,6 +13,7 @@ type DebugReportInput = {
   extensionVersion?: string;
   generatedAt?: string;
   taskLog?: ApiTaskLogEntry[];
+  readingBehavior?: ReadingBehaviorSettings;
 };
 
 function redactConversationId(id: string): string {
@@ -53,6 +55,12 @@ export function buildDebugReport(input: DebugReportInput): string {
     `Fallback text candidates: ${diagnostics?.fallbackTextCandidates ?? "n/a"}`,
     `Fallback blocks: ${diagnostics?.fallbackBlocks ?? "n/a"}`,
     `Fallback turns: ${diagnostics?.fallbackTurns ?? "n/a"}`,
+    "",
+    "## Reading and Jumping",
+    "",
+    `Scroll speed multiplier: ${input.readingBehavior?.scrollSpeedMultiplier ?? "n/a"}x`,
+    `Edge wait time: ${input.readingBehavior?.edgeWaitSeconds ?? "n/a"}s`,
+    `Jump search strength: ${input.readingBehavior?.jumpSearchStrength ?? "n/a"}x`,
     "",
     "## Browser",
     "",

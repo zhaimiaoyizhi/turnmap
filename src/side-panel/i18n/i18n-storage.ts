@@ -324,6 +324,19 @@ export const EN_TRANSLATIONS = {
   "settings.nodeColorRenderGradient": "Gradient",
   "settings.nodeColorRenderSolid": "Solid",
   "settings.nodeColorRenderStrength": "Render strength",
+  "settings.readingJumping": "Reading and Jumping",
+  "settings.readingJumpingHint": "Global controls for deep scan scrolling and fallback source jumping.",
+  "settings.scrollSpeedMultiplier": "Scroll speed multiplier",
+  "settings.scrollSpeedMultiplierHint":
+    "Default 1.0x. Higher values read faster but may increase missed messages, bounce-back, or jump failures; lower values are steadier but make deep scans slower.",
+  "settings.edgeWaitSeconds": "Edge wait time",
+  "settings.edgeWaitSecondsHint":
+    "Default 0.8 seconds, maximum 20 seconds. Too little waiting can miss content that loads at the top or bottom; too much waiting noticeably increases scan time.",
+  "settings.jumpSearchStrength": "Jump search strength",
+  "settings.jumpSearchStrengthHint":
+    "Default 1.0x. Higher strength may make the page move quickly during fallback jumps; lower strength may give up sooner and fail to reach distant source turns.",
+  "settings.restoreReadingDefaults": "Restore reading/jump defaults",
+  "settings.readingDefaultsRestored": "Reading and jumping values restored in the form. Save to apply them.",
   "settings.saveInterface": "Save Interface",
   "settings.loadingInterface": "Loading interface settings...",
   "settings.section.updates": "Updates",
@@ -658,6 +671,19 @@ export const ZH_TRANSLATIONS: TranslationMap = {
   "settings.nodeColorRenderGradient": "渐变",
   "settings.nodeColorRenderSolid": "底色",
   "settings.nodeColorRenderStrength": "渲染程度",
+  "settings.readingJumping": "读取与跳转",
+  "settings.readingJumpingHint": "用于深度扫描滚动和原文跳转兜底搜索的全局控制。",
+  "settings.scrollSpeedMultiplier": "滚动速度倍数",
+  "settings.scrollSpeedMultiplierHint":
+    "默认 1.0x。较高倍数读取更快，但可能增加遗漏、回弹或跳转失败；较低倍数更稳，但深度扫描耗时更长。",
+  "settings.edgeWaitSeconds": "边界等待时间",
+  "settings.edgeWaitSecondsHint":
+    "默认 0.8 秒，最长 20 秒。等待过短可能漏读顶部或底部新加载内容；等待过长会明显增加扫描耗时。",
+  "settings.jumpSearchStrength": "跳转搜索强度",
+  "settings.jumpSearchStrengthHint":
+    "默认 1.0x。强度过高可能造成页面快速跳动；强度过低可能更快放弃，导致较远原文跳转失败。",
+  "settings.restoreReadingDefaults": "恢复读取/跳转默认值",
+  "settings.readingDefaultsRestored": "已在表单中恢复读取与跳转默认值，保存后生效。",
   "settings.saveInterface": "保存界面设置",
   "settings.loadingInterface": "正在加载界面设置...",
   "settings.section.updates": "更新",

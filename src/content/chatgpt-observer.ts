@@ -1,5 +1,6 @@
 ﻿import type { ExtractedTurnsMessage, Turn } from "../shared/types";
 import { extractConversationApiTurns } from "./conversation-api-extractor";
+import { loadReadingBehaviorSettings } from "../shared/reading-settings";
 import { describeScrollElement, getChatScrollElement } from "./scroll-container";
 import { smartHarvestByScrolling } from "./smart-scroll-harvest.ts";
 import { extractStructuredTurns } from "./structured-extractor";
@@ -78,6 +79,7 @@ async function getNonDisruptiveTurns(): Promise<Turn[]> {
 export async function harvestTurnsByScrolling(): Promise<Turn[]> {
   const scrollElement = getChatScrollElement();
   const originalTop = scrollElement.scrollTop;
+  const settings = await loadReadingBehaviorSettings();
   const result = await (async () => {
     try {
       return await smartHarvestByScrolling({
@@ -85,7 +87,8 @@ export async function harvestTurnsByScrolling(): Promise<Turn[]> {
         collectTurns: extractTurns,
         mergeTurns,
         normalizeTurns: normalizeTurnIndexes,
-        maxDownSteps: 90
+        maxDownSteps: 90,
+        settings
       });
     } finally {
       scrollElement.scrollTo({ top: originalTop, behavior: "instant" });

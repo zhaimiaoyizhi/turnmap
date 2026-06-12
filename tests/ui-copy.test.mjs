@@ -246,6 +246,47 @@ test("link connection style setting is localized and defaults to curved edges", 
   assert.match(canvasSource, /setEdges\(\(currentEdges\) => currentEdges\.map\(\(edge\) => applyEdgeStyle\(edge, style\)\)\)/);
 });
 
+test("reading and jumping settings are localized and wired to content scripts", async () => {
+  const settingsSource = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
+  const storageSource = await readFile(new URL("../src/shared/reading-settings.ts", import.meta.url), "utf8");
+  const smartScrollSource = await readFile(new URL("../src/content/smart-scroll-harvest.ts", import.meta.url), "utf8");
+  const jumpSource = await readFile(new URL("../src/content/jump-controller.ts", import.meta.url), "utf8");
+  const webAdapterSource = await readFile(new URL("../src/content/web-adapter-core.ts", import.meta.url), "utf8");
+  const debugReportSource = await readFile(new URL("../src/side-panel/debug-report.ts", import.meta.url), "utf8");
+  const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  for (const key of [
+    "settings.readingJumping",
+    "settings.scrollSpeedMultiplier",
+    "settings.scrollSpeedMultiplierHint",
+    "settings.edgeWaitSeconds",
+    "settings.edgeWaitSecondsHint",
+    "settings.jumpSearchStrength",
+    "settings.jumpSearchStrengthHint",
+    "settings.restoreReadingDefaults",
+    "settings.readingDefaultsRestored"
+  ]) {
+    assert.match(i18nSource, new RegExp(`"${key}":`));
+    assert.match(settingsSource, new RegExp(key.replaceAll(".", "\\.")));
+  }
+
+  assert.match(settingsSource, /function edgeWaitSecondsToSliderValue/);
+  assert.match(settingsSource, /function edgeWaitSliderValueToSeconds/);
+  assert.match(settingsSource, /NumericSliderSetting/);
+  assert.match(settingsSource, /READING_BEHAVIOR_DEFAULTS/);
+  assert.match(storageSource, /scrollSpeedMultiplier:\s*1/);
+  assert.match(storageSource, /edgeWaitSeconds:\s*0\.8/);
+  assert.match(storageSource, /jumpSearchStrength:\s*1/);
+  assert.match(smartScrollSource, /settings\?\.scrollSpeedMultiplier/);
+  assert.match(smartScrollSource, /settings\?\.edgeWaitSeconds/);
+  assert.match(jumpSource, /loadReadingBehaviorSettings/);
+  assert.match(jumpSource, /settings\.jumpSearchStrength/);
+  assert.match(webAdapterSource, /loadReadingBehaviorSettings/);
+  assert.match(debugReportSource, /Scroll speed multiplier/);
+  assert.match(debugReportSource, /Edge wait time/);
+  assert.match(debugReportSource, /Jump search strength/);
+});
+
 test("collapsed node action writes compact automatic dimensions", async () => {
   const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
 
