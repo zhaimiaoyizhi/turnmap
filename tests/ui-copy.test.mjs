@@ -274,6 +274,15 @@ test("interface settings expose default node size controls and canvas uses them"
   assert.match(canvasSource, /withInitialContentFittingDimensions\(\{[\s\S]*nodeSizeSettings/);
 });
 
+test("default node size refreshes are idempotent to avoid graph reload loops", async () => {
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+
+  assert.match(canvasSource, /function sameDefaultNodeSizeSettings/);
+  assert.match(canvasSource, /setNodeSizeSettings\(\(current\) =>/);
+  assert.match(canvasSource, /sameDefaultNodeSizeSettings\(current,\s*nextSettings\)\s*\?\s*current\s*:\s*nextSettings/);
+  assert.doesNotMatch(canvasSource, /setNodeSizeSettings\(activeNodeSizeSettings\);/);
+});
+
 test("reading and jumping settings are localized and wired to content scripts", async () => {
   const settingsSource = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
   const storageSource = await readFile(new URL("../src/shared/reading-settings.ts", import.meta.url), "utf8");

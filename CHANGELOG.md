@@ -27,6 +27,11 @@ All notable changes to TurnMap will be documented in this file.
 
 - Fixed edited link weights forcing normal graph links back into the angled/smoothstep shape when the user wanted curved links.
 - Fixed ChatGPT extraction reading only the first markdown block from a multi-block assistant answer.
+- Fixed a default-node-size settings refresh loop that could repeatedly reload the graph and leave only the themed background visible after the side panel opened.
+
+### Development Notes
+
+- Lesson learned: storage-backed object settings must reuse the previous React state object when values are unchanged, especially when callback dependencies feed graph-loading effects. Equal-value refreshes should be idempotent, not a hidden reload trigger.
 
 ## [0.7.0] - Knowledge Organization And Node Editing
 

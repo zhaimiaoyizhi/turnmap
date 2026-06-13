@@ -318,6 +318,14 @@ function withDefaultNodeDisplayLines(data: TurnNodeData, settings: DefaultNodeSi
   };
 }
 
+function sameDefaultNodeSizeSettings(a: DefaultNodeSizeSettings, b: DefaultNodeSizeSettings): boolean {
+  return (
+    a.defaultNodeWidth === b.defaultNodeWidth &&
+    a.defaultNodeHeight === b.defaultNodeHeight &&
+    a.defaultNodePromptRatio === b.defaultNodePromptRatio
+  );
+}
+
 function originalContentDimensions(
   node: Node<TurnNodeData>,
   settings: DefaultNodeSizeSettings = DEFAULT_NODE_SIZE_SETTINGS
@@ -2272,6 +2280,11 @@ export function TurnMapCanvas({
   const [topicGroups, setTopicGroups] = useState<TopicGroupRecord[]>([]);
   const [linkConnectionStyle, setLinkConnectionStyle] = useState<LinkConnectionStyle>("curved");
   const [nodeSizeSettings, setNodeSizeSettings] = useState<DefaultNodeSizeSettings>(DEFAULT_NODE_SIZE_SETTINGS);
+  const updateNodeSizeSettings = useCallback((nextSettings: DefaultNodeSizeSettings) => {
+    setNodeSizeSettings((current) =>
+      sameDefaultNodeSizeSettings(current, nextSettings) ? current : nextSettings
+    );
+  }, []);
   const [summarizingNodeIds, setSummarizingNodeIds] = useState<Set<string>>(() => new Set());
   const [expandingNodeIds, setExpandingNodeIds] = useState<Set<string>>(() => new Set());
   const [pendingSuggestedEdges, setPendingSuggestedEdges] = useState<Edge[]>([]);
@@ -2636,7 +2649,7 @@ export function TurnMapCanvas({
       const style = settings.linkConnectionStyle;
       activeLinkConnectionStyle = style;
       setLinkConnectionStyle(style);
-      setNodeSizeSettings({
+      updateNodeSizeSettings({
         defaultNodeWidth: settings.defaultNodeWidth,
         defaultNodeHeight: settings.defaultNodeHeight,
         defaultNodePromptRatio: settings.defaultNodePromptRatio
@@ -2663,7 +2676,7 @@ export function TurnMapCanvas({
       cancelled = true;
       chrome.storage.onChanged.removeListener(listener);
     };
-  }, [setEdges]);
+  }, [setEdges, updateNodeSizeSettings]);
 
   const summarizeNode = useCallback(
     async (nodeId: string) => {
@@ -3035,7 +3048,7 @@ export function TurnMapCanvas({
         defaultNodeHeight: uiSettings.defaultNodeHeight,
         defaultNodePromptRatio: uiSettings.defaultNodePromptRatio
       };
-      setNodeSizeSettings(activeNodeSizeSettings);
+      updateNodeSizeSettings(activeNodeSizeSettings);
       const activeLayout = shouldRebuild ? defaultLayout : (storedGraph?.layoutMode ?? defaultLayout);
       const activeHiddenRoot = shouldRebuild ? false : (storedGraph?.hiddenRoot ?? false);
       const storedNodeOverrides = shouldRebuild ? {} : (storedGraph?.nodeOverrides ?? {});
@@ -3133,6 +3146,7 @@ export function TurnMapCanvas({
     t,
     turns,
     turnUpdateMode,
+    updateNodeSizeSettings,
     updateNodeText
   ]);
 
