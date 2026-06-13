@@ -1,6 +1,6 @@
 ﻿import type { ConversationSite } from "./adapter-registry";
 import type { JumpToTurnResult, SourceAnchor, Turn } from "../shared/types";
-import { loadReadingBehaviorSettings } from "../shared/reading-settings.ts";
+import { loadReadingBehaviorSettings } from "./reading-settings.ts";
 import { stableTurnIdAssigner } from "../shared/turn-id.ts";
 import { smartHarvestByScrolling } from "./smart-scroll-harvest.ts";
 

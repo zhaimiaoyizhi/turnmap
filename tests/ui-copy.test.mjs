@@ -249,6 +249,7 @@ test("link connection style setting is localized and defaults to curved edges", 
 test("reading and jumping settings are localized and wired to content scripts", async () => {
   const settingsSource = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
   const storageSource = await readFile(new URL("../src/shared/reading-settings.ts", import.meta.url), "utf8");
+  const contentStorageSource = await readFile(new URL("../src/content/reading-settings.ts", import.meta.url), "utf8");
   const smartScrollSource = await readFile(new URL("../src/content/smart-scroll-harvest.ts", import.meta.url), "utf8");
   const jumpSource = await readFile(new URL("../src/content/jump-controller.ts", import.meta.url), "utf8");
   const webAdapterSource = await readFile(new URL("../src/content/web-adapter-core.ts", import.meta.url), "utf8");
@@ -264,7 +265,9 @@ test("reading and jumping settings are localized and wired to content scripts", 
     "settings.jumpSearchStrength",
     "settings.jumpSearchStrengthHint",
     "settings.restoreReadingDefaults",
-    "settings.readingDefaultsRestored"
+    "settings.readingDefaultsRestored",
+    "settings.saveReadingJumping",
+    "settings.loadingReadingJumping"
   ]) {
     assert.match(i18nSource, new RegExp(`"${key}":`));
     assert.match(settingsSource, new RegExp(key.replaceAll(".", "\\.")));
@@ -277,6 +280,8 @@ test("reading and jumping settings are localized and wired to content scripts", 
   assert.match(storageSource, /scrollSpeedMultiplier:\s*1/);
   assert.match(storageSource, /edgeWaitSeconds:\s*0\.8/);
   assert.match(storageSource, /jumpSearchStrength:\s*1/);
+  assert.match(contentStorageSource, /turnmap\.reading\.scrollSpeedMultiplier/);
+  assert.doesNotMatch(smartScrollSource, /\.\.\/shared\/reading-settings/);
   assert.match(smartScrollSource, /settings\?\.scrollSpeedMultiplier/);
   assert.match(smartScrollSource, /settings\?\.edgeWaitSeconds/);
   assert.match(jumpSource, /loadReadingBehaviorSettings/);

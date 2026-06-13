@@ -1,8 +1,11 @@
-import type { ReadingBehaviorSettings } from "../shared/reading-settings.ts";
-
 export type SmartScrollHarvestResult<T> = {
   turns: T[];
   scannedSteps: number;
+};
+
+type SmartScrollBehaviorSettings = {
+  scrollSpeedMultiplier: number;
+  edgeWaitSeconds: number;
 };
 
 type SmartScrollHarvestOptions<T> = {
@@ -12,7 +15,7 @@ type SmartScrollHarvestOptions<T> = {
   normalizeTurns: (turns: T[]) => T[];
   maxUpSteps?: number;
   maxDownSteps?: number;
-  settings?: Pick<ReadingBehaviorSettings, "scrollSpeedMultiplier" | "edgeWaitSeconds">;
+  settings?: SmartScrollBehaviorSettings;
 };
 
 function delay(milliseconds: number): Promise<void> {

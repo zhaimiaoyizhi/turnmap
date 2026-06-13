@@ -1,6 +1,6 @@
 ﻿import type { JumpToTurnResult, SourceAnchor } from "../shared/types";
 import { getLatestTurns } from "./chatgpt-observer";
-import { loadReadingBehaviorSettings } from "../shared/reading-settings.ts";
+import { loadReadingBehaviorSettings } from "./reading-settings.ts";
 import { getChatScrollElement } from "./scroll-container";
 import { findTurnElement, getVisibleTurnIndexRange } from "./turn-extractor";
 

@@ -1,6 +1,6 @@
 ﻿import type { ExtractedTurnsMessage, Turn } from "../shared/types";
 import { extractConversationApiTurns } from "./conversation-api-extractor";
-import { loadReadingBehaviorSettings } from "../shared/reading-settings";
+import { loadReadingBehaviorSettings } from "./reading-settings";
 import { describeScrollElement, getChatScrollElement } from "./scroll-container";
 import { smartHarvestByScrolling } from "./smart-scroll-harvest.ts";
 import { extractStructuredTurns } from "./structured-extractor";

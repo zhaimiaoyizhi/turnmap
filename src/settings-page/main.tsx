@@ -468,52 +468,6 @@ function SettingsPage() {
                 </label>
               </fieldset>
 
-              <fieldset className="settings-fieldset">
-                <legend>{t("settings.readingJumping")}</legend>
-                <p>{t("settings.readingJumpingHint")}</p>
-                <NumericSliderSetting
-                  label={t("settings.scrollSpeedMultiplier")}
-                  description={t("settings.scrollSpeedMultiplierHint")}
-                  value={settings.scrollSpeedMultiplier}
-                  min={0.5}
-                  max={2}
-                  step={0.1}
-                  suffix="x"
-                  onChange={(value) => update({ scrollSpeedMultiplier: value })}
-                  normalize={normalizeScrollSpeedMultiplier}
-                />
-                <NumericSliderSetting
-                  label={t("settings.edgeWaitSeconds")}
-                  description={t("settings.edgeWaitSecondsHint")}
-                  value={settings.edgeWaitSeconds}
-                  min={0}
-                  max={20}
-                  step={0.1}
-                  suffix="s"
-                  sliderValue={edgeWaitSecondsToSliderValue(settings.edgeWaitSeconds)}
-                  sliderMin={0}
-                  sliderMax={100}
-                  sliderStep={1}
-                  onSliderChange={(value) => update({ edgeWaitSeconds: edgeWaitSliderValueToSeconds(value) })}
-                  onChange={(value) => update({ edgeWaitSeconds: value })}
-                  normalize={normalizeEdgeWaitSeconds}
-                />
-                <NumericSliderSetting
-                  label={t("settings.jumpSearchStrength")}
-                  description={t("settings.jumpSearchStrengthHint")}
-                  value={settings.jumpSearchStrength}
-                  min={0.5}
-                  max={2}
-                  step={0.1}
-                  suffix="x"
-                  onChange={(value) => update({ jumpSearchStrength: value })}
-                  normalize={normalizeJumpSearchStrength}
-                />
-                <button type="button" onClick={resetReadingBehavior}>
-                  {t("settings.restoreReadingDefaults")}
-                </button>
-              </fieldset>
-
               <label className="settings-panel__check">
                 <input
                   type="checkbox"
@@ -540,6 +494,66 @@ function SettingsPage() {
             </>
           ) : (
             <p>{t("settings.loadingInterface")}</p>
+          )}
+        </section>
+
+        <section className="settings-section">
+          <div className="settings-section__header">
+            <strong>{t("settings.readingJumping")}</strong>
+            <span>{t("settings.readingJumpingHint")}</span>
+          </div>
+
+          {settings ? (
+            <>
+              <NumericSliderSetting
+                label={t("settings.scrollSpeedMultiplier")}
+                description={t("settings.scrollSpeedMultiplierHint")}
+                value={settings.scrollSpeedMultiplier}
+                min={0.5}
+                max={2}
+                step={0.1}
+                suffix="x"
+                onChange={(value) => update({ scrollSpeedMultiplier: value })}
+                normalize={normalizeScrollSpeedMultiplier}
+              />
+              <NumericSliderSetting
+                label={t("settings.edgeWaitSeconds")}
+                description={t("settings.edgeWaitSecondsHint")}
+                value={settings.edgeWaitSeconds}
+                min={0}
+                max={20}
+                step={0.1}
+                suffix="s"
+                sliderValue={edgeWaitSecondsToSliderValue(settings.edgeWaitSeconds)}
+                sliderMin={0}
+                sliderMax={100}
+                sliderStep={1}
+                onSliderChange={(value) => update({ edgeWaitSeconds: edgeWaitSliderValueToSeconds(value) })}
+                onChange={(value) => update({ edgeWaitSeconds: value })}
+                normalize={normalizeEdgeWaitSeconds}
+              />
+              <NumericSliderSetting
+                label={t("settings.jumpSearchStrength")}
+                description={t("settings.jumpSearchStrengthHint")}
+                value={settings.jumpSearchStrength}
+                min={0.5}
+                max={2}
+                step={0.1}
+                suffix="x"
+                onChange={(value) => update({ jumpSearchStrength: value })}
+                normalize={normalizeJumpSearchStrength}
+              />
+              <div className="settings-panel__actions">
+                <button type="button" onClick={resetReadingBehavior}>
+                  {t("settings.restoreReadingDefaults")}
+                </button>
+                <button type="button" onClick={save}>
+                  {t("settings.saveReadingJumping")}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p>{t("settings.loadingReadingJumping")}</p>
           )}
         </section>
 
