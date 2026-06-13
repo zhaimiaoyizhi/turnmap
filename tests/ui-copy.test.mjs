@@ -299,6 +299,9 @@ test("collapsed node action writes compact automatic dimensions", async () => {
   assert.match(canvasSource, /function compactCollapsedDimensions/);
   assert.match(canvasSource, /function expandedContentDimensions/);
   assert.match(canvasSource, /function withContentFittingDimensions/);
+  assert.match(canvasSource, /const compactWidth = Math\.max\(node\.data\.isConversationRoot \? 182 : 168, Math\.round\(defaultWidth \* 0\.7\)\)/);
+  assert.match(canvasSource, /const badgeRows = tagRowCount\(node\.data\.tags, compactWidth\)/);
+  assert.match(canvasSource, /width: compactWidth/);
   assert.match(canvasSource, /updateNodeExpansion\(nodeId, \(expansion\) => updateMiniNode/);
   assert.match(canvasSource, /withContentFittingDimensions\(node,\s*\{\s*[\s\S]*collapsed: shouldCollapse/);
   assert.match(canvasSource, /withContentFittingDimensions\(node,\s*\{\s*[\s\S]*displayMode/);

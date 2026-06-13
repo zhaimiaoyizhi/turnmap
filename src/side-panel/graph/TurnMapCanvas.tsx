@@ -317,10 +317,11 @@ function originalContentDimensions(node: Node<TurnNodeData>): { width: number; h
 function compactCollapsedDimensions(node: Node<TurnNodeData>): { width: number; height: number; manual: boolean } {
   const titleWidth = 170 + Math.min(260, Math.round(node.data.title.trim().length * 6.8));
   const rawWidth = Number(node.style?.width ?? node.data.dimensions?.width ?? titleWidth);
-  const width = Math.max(node.data.isConversationRoot ? 260 : 240, Math.min(560, Math.max(titleWidth, Math.round(rawWidth))));
-  const badgeRows = tagRowCount(node.data.tags, width);
+  const defaultWidth = Math.max(node.data.isConversationRoot ? 260 : 240, Math.min(560, Math.max(titleWidth, Math.round(rawWidth))));
+  const compactWidth = Math.max(node.data.isConversationRoot ? 182 : 168, Math.round(defaultWidth * 0.7));
+  const badgeRows = tagRowCount(node.data.tags, compactWidth);
   return {
-    width,
+    width: compactWidth,
     height: Math.max(120, 94 + badgeRows * 26),
     manual: false
   };
