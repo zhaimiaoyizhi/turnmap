@@ -780,16 +780,24 @@ textarea:focus-visible {
 
 .turn-node h2 {
   color: var(--cm-text);
+  display: -webkit-box;
   font-size: 14px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--turn-node-title-line-clamp, 2);
   line-height: 1.35;
   margin: 0 0 8px;
+  overflow: hidden;
 }
 
 .turn-node p {
   color: var(--cm-text-muted);
+  display: -webkit-box;
   font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--turn-node-summary-line-clamp, 7);
   line-height: 1.45;
   margin: 0;
+  overflow: hidden;
 }
 
 .turn-node__mini-map {
@@ -1014,6 +1022,27 @@ textarea:focus-visible {
   display: block;
   height: 100%;
   width: 100%;
+}
+
+.color-swatch-button--theme {
+  gap: 5px;
+  min-width: 64px;
+  padding: 3px 6px;
+  width: auto;
+}
+
+.color-swatch-button--theme .color-swatch-button__preview {
+  background:
+    linear-gradient(135deg, var(--cm-surface) 0 50%, var(--cm-surface-soft) 50% 100%);
+  height: 18px;
+  width: 18px;
+}
+
+.color-swatch-button__label {
+  color: var(--cm-text);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .color-swatch-button[aria-pressed="true"],

@@ -4,6 +4,9 @@ import { AiSettingsForm } from "../side-panel/settings/AiSettingsForm";
 import {
   applyNodeColorRendering,
   loadUiSettings,
+  normalizeDefaultNodeHeight,
+  normalizeDefaultNodePromptRatio,
+  normalizeDefaultNodeWidth,
   saveUiSettings,
   type UiSettings
 } from "../side-panel/settings/ui-settings-storage";
@@ -397,6 +400,49 @@ function SettingsPage() {
                   <option value="angled">{t("settings.linkConnectionStyleAngled")}</option>
                 </select>
               </label>
+
+              <fieldset className="settings-fieldset">
+                <legend>{t("settings.defaultNodeSize")}</legend>
+                <NumericSliderSetting
+                  label={t("settings.defaultNodeWidth")}
+                  description={t("settings.defaultNodeWidthHint")}
+                  value={settings.defaultNodeWidth}
+                  min={220}
+                  max={1200}
+                  step={10}
+                  suffix="px"
+                  onChange={(value) => update({ defaultNodeWidth: normalizeDefaultNodeWidth(value) })}
+                  normalize={normalizeDefaultNodeWidth}
+                />
+                <NumericSliderSetting
+                  label={t("settings.defaultNodeHeight")}
+                  description={t("settings.defaultNodeHeightHint")}
+                  value={settings.defaultNodeHeight}
+                  min={120}
+                  max={900}
+                  step={10}
+                  suffix="px"
+                  onChange={(value) => update({ defaultNodeHeight: normalizeDefaultNodeHeight(value) })}
+                  normalize={normalizeDefaultNodeHeight}
+                />
+                <label className="settings-range-control">
+                  <span>{t("settings.defaultNodePromptRatio")}</span>
+                  <div className="settings-range-control__row">
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.25"
+                      value={settings.defaultNodePromptRatio}
+                      onChange={(event) =>
+                        update({ defaultNodePromptRatio: normalizeDefaultNodePromptRatio(event.currentTarget.value) })
+                      }
+                    />
+                    <span>{Math.round(settings.defaultNodePromptRatio * 100)}%</span>
+                  </div>
+                  <p>{t("settings.defaultNodePromptRatioHint")}</p>
+                </label>
+              </fieldset>
 
               <div className="settings-section__inline">
                 <label>

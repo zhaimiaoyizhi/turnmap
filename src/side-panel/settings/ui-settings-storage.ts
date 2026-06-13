@@ -15,6 +15,9 @@ const IGNORED_VERSION_KEY = "turnmap.updateNotice.ignoredVersion";
 const NODE_COLOR_RENDER_MODE_KEY = "turnmap.nodeColor.renderMode";
 const NODE_COLOR_RENDER_STRENGTH_KEY = "turnmap.nodeColor.renderStrength";
 const LINK_CONNECTION_STYLE_KEY = "turnmap.link.connectionStyle";
+const DEFAULT_NODE_WIDTH_KEY = "turnmap.nodeSize.defaultWidth";
+const DEFAULT_NODE_HEIGHT_KEY = "turnmap.nodeSize.defaultHeight";
+const DEFAULT_NODE_PROMPT_RATIO_KEY = "turnmap.nodeSize.promptRatio";
 
 export const UI_SETTINGS_STORAGE_KEYS = [
   FLOATING_PANEL_ENABLED_KEY,
@@ -25,11 +28,25 @@ export const UI_SETTINGS_STORAGE_KEYS = [
   THEME_STORAGE_KEY,
   NODE_COLOR_RENDER_MODE_KEY,
   NODE_COLOR_RENDER_STRENGTH_KEY,
-  LINK_CONNECTION_STYLE_KEY
+  LINK_CONNECTION_STYLE_KEY,
+  DEFAULT_NODE_WIDTH_KEY,
+  DEFAULT_NODE_HEIGHT_KEY,
+  DEFAULT_NODE_PROMPT_RATIO_KEY
 ] as const;
 
 export type NodeColorRenderMode = "gradient" | "solid";
 export type LinkConnectionStyle = "curved" | "angled";
+export type DefaultNodeSizeSettings = {
+  defaultNodeWidth: number;
+  defaultNodeHeight: number;
+  defaultNodePromptRatio: number;
+};
+
+export const DEFAULT_NODE_SIZE_SETTINGS: DefaultNodeSizeSettings = {
+  defaultNodeWidth: 280,
+  defaultNodeHeight: 220,
+  defaultNodePromptRatio: 0.25
+};
 
 export type UiSettings = ReadingBehaviorSettings & {
   defaultLayout: LayoutMode;
@@ -42,6 +59,9 @@ export type UiSettings = ReadingBehaviorSettings & {
   nodeColorRenderMode: NodeColorRenderMode;
   nodeColorRenderStrength: number;
   linkConnectionStyle: LinkConnectionStyle;
+  defaultNodeWidth: number;
+  defaultNodeHeight: number;
+  defaultNodePromptRatio: number;
 };
 
 function normalizeRenderMode(value: unknown): NodeColorRenderMode {
@@ -56,6 +76,24 @@ function normalizeRenderStrength(value: unknown): number {
 
 export function normalizeLinkConnectionStyle(value: unknown): LinkConnectionStyle {
   return value === "angled" ? "angled" : "curved";
+}
+
+export function normalizeDefaultNodeWidth(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_NODE_SIZE_SETTINGS.defaultNodeWidth;
+  return Math.max(220, Math.min(1200, Math.round(numeric)));
+}
+
+export function normalizeDefaultNodeHeight(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_NODE_SIZE_SETTINGS.defaultNodeHeight;
+  return Math.max(120, Math.min(900, Math.round(numeric)));
+}
+
+export function normalizeDefaultNodePromptRatio(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_NODE_SIZE_SETTINGS.defaultNodePromptRatio;
+  return Math.max(0, Math.min(1, Math.round(numeric * 4) / 4));
 }
 
 export async function loadUiSettings(): Promise<UiSettings> {
@@ -76,7 +114,10 @@ export async function loadUiSettings(): Promise<UiSettings> {
     ignoredVersion: typeof stored[IGNORED_VERSION_KEY] === "string" ? stored[IGNORED_VERSION_KEY] : "",
     nodeColorRenderMode: normalizeRenderMode(stored[NODE_COLOR_RENDER_MODE_KEY]),
     nodeColorRenderStrength: normalizeRenderStrength(stored[NODE_COLOR_RENDER_STRENGTH_KEY]),
-    linkConnectionStyle: normalizeLinkConnectionStyle(stored[LINK_CONNECTION_STYLE_KEY])
+    linkConnectionStyle: normalizeLinkConnectionStyle(stored[LINK_CONNECTION_STYLE_KEY]),
+    defaultNodeWidth: normalizeDefaultNodeWidth(stored[DEFAULT_NODE_WIDTH_KEY]),
+    defaultNodeHeight: normalizeDefaultNodeHeight(stored[DEFAULT_NODE_HEIGHT_KEY]),
+    defaultNodePromptRatio: normalizeDefaultNodePromptRatio(stored[DEFAULT_NODE_PROMPT_RATIO_KEY])
   };
 }
 
@@ -97,7 +138,10 @@ export async function saveUiSettings(settings: UiSettings): Promise<void> {
       [THEME_STORAGE_KEY]: settings.theme,
       [NODE_COLOR_RENDER_MODE_KEY]: settings.nodeColorRenderMode,
       [NODE_COLOR_RENDER_STRENGTH_KEY]: normalizeRenderStrength(settings.nodeColorRenderStrength),
-      [LINK_CONNECTION_STYLE_KEY]: normalizeLinkConnectionStyle(settings.linkConnectionStyle)
+      [LINK_CONNECTION_STYLE_KEY]: normalizeLinkConnectionStyle(settings.linkConnectionStyle),
+      [DEFAULT_NODE_WIDTH_KEY]: normalizeDefaultNodeWidth(settings.defaultNodeWidth),
+      [DEFAULT_NODE_HEIGHT_KEY]: normalizeDefaultNodeHeight(settings.defaultNodeHeight),
+      [DEFAULT_NODE_PROMPT_RATIO_KEY]: normalizeDefaultNodePromptRatio(settings.defaultNodePromptRatio)
     })
   ]);
 }

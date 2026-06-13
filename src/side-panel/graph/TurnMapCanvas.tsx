@@ -37,9 +37,11 @@ import { loadAiSettings } from "../settings/ai-settings-storage";
 import { applyTheme, normalizeTheme, resolveTheme, type ThemeMode } from "../settings/theme-storage";
 import {
   applyNodeColorRendering,
+  DEFAULT_NODE_SIZE_SETTINGS,
   loadUiSettings,
   saveUiSettings,
   UI_SETTINGS_STORAGE_KEYS,
+  type DefaultNodeSizeSettings,
   type LinkConnectionStyle,
   type NodeColorRenderMode
 } from "../settings/ui-settings-storage";
@@ -134,6 +136,8 @@ type TurnNodeData = {
   color?: NodeColorName;
   collapsed?: boolean;
   important?: boolean;
+  titleLineClamp?: number;
+  summaryLineClamp?: number;
   dimensions?: { width: number; height: number; manual: boolean };
   answerExpansion?: AnswerExpansion;
   topicGroupId?: string;
@@ -296,19 +300,42 @@ function tagRowCount(tags: string[] | undefined, width: number): number {
   return Math.ceil(tags.length / capacity);
 }
 
-function originalContentDimensions(node: Node<TurnNodeData>): { width: number; height: number; manual: boolean } {
+function displayLineBudget(settings: DefaultNodeSizeSettings): { titleLines: number; summaryLines: number } {
+  const totalLines = Math.max(2, Math.round((settings.defaultNodeHeight - 62) / 18));
+  const titleLines = Math.round(totalLines * settings.defaultNodePromptRatio);
+  return {
+    titleLines,
+    summaryLines: Math.max(0, totalLines - titleLines)
+  };
+}
+
+function withDefaultNodeDisplayLines(data: TurnNodeData, settings: DefaultNodeSizeSettings): TurnNodeData {
+  const lineBudget = displayLineBudget(settings);
+  return {
+    ...data,
+    titleLineClamp: lineBudget.titleLines,
+    summaryLineClamp: lineBudget.summaryLines
+  };
+}
+
+function originalContentDimensions(
+  node: Node<TurnNodeData>,
+  settings: DefaultNodeSizeSettings = DEFAULT_NODE_SIZE_SETTINGS
+): { width: number; height: number; manual: boolean } {
   const titleLength = node.data.title.trim().length;
   const summaryLength = node.data.summary.trim().length;
   const width = Math.max(
-    node.data.isConversationRoot ? 300 : 280,
-    Math.min(680, 280 + Math.round(Math.sqrt(Math.max(titleLength * 8, summaryLength)) * 18))
+    node.data.isConversationRoot ? Math.max(300, settings.defaultNodeWidth) : settings.defaultNodeWidth,
+    Math.min(680, settings.defaultNodeWidth + Math.round(Math.sqrt(Math.max(titleLength * 8, summaryLength)) * 18))
   );
   const charsPerLine = Math.max(18, Math.floor((width - 32) / 7));
-  const titleLines = estimateWrappedLineCount(node.data.title, charsPerLine, 4);
-  const summaryLines = estimateWrappedLineCount(node.data.summary, charsPerLine, 36);
+  const lineBudget = displayLineBudget(settings);
+  const titleLines = lineBudget.titleLines === 0 ? 0 : estimateWrappedLineCount(node.data.title, charsPerLine, lineBudget.titleLines);
+  const summaryLines =
+    lineBudget.summaryLines === 0 ? 0 : estimateWrappedLineCount(node.data.summary, charsPerLine, lineBudget.summaryLines);
   const badgeRows = tagRowCount(node.data.tags, width);
   const height = Math.max(
-    node.data.isConversationRoot ? 160 : 150,
+    node.data.isConversationRoot ? Math.max(160, settings.defaultNodeHeight) : settings.defaultNodeHeight,
     Math.min(980, 62 + titleLines * 20 + summaryLines * 18 + badgeRows * 28)
   );
   return { width, height, manual: false };
@@ -340,15 +367,22 @@ function expandedContentDimensions(expansion: AnswerExpansion): { width: number;
   };
 }
 
-function contentFittingDimensions(node: Node<TurnNodeData>): { width: number; height: number; manual: boolean } {
+function contentFittingDimensions(
+  node: Node<TurnNodeData>,
+  settings: DefaultNodeSizeSettings = DEFAULT_NODE_SIZE_SETTINGS
+): { width: number; height: number; manual: boolean } {
   if (node.data.collapsed) return compactCollapsedDimensions(node);
   if (node.data.answerExpansion?.displayMode === "expanded") return expandedContentDimensions(node.data.answerExpansion);
-  return originalContentDimensions(node);
+  return originalContentDimensions(node, settings);
 }
 
-function withContentFittingDimensions(node: Node<TurnNodeData>, data: TurnNodeData): Node<TurnNodeData> {
-  const draftNode = { ...node, data };
-  const dimensions = contentFittingDimensions(draftNode);
+function withContentFittingDimensions(
+  node: Node<TurnNodeData>,
+  data: TurnNodeData,
+  settings: DefaultNodeSizeSettings = DEFAULT_NODE_SIZE_SETTINGS
+): Node<TurnNodeData> {
+  const draftNode = { ...node, data: withDefaultNodeDisplayLines(data, settings) };
+  const dimensions = contentFittingDimensions(draftNode, settings);
   return {
     ...draftNode,
     style: {
@@ -363,9 +397,16 @@ function withContentFittingDimensions(node: Node<TurnNodeData>, data: TurnNodeDa
   };
 }
 
-function withInitialContentFittingDimensions(node: Node<TurnNodeData>): Node<TurnNodeData> {
-  if (node.data.dimensions) return node;
-  return withContentFittingDimensions(node, node.data);
+function withInitialContentFittingDimensions(
+  node: Node<TurnNodeData>,
+  settings: DefaultNodeSizeSettings = DEFAULT_NODE_SIZE_SETTINGS
+): Node<TurnNodeData> {
+  const nodeWithDisplayLines = {
+    ...node,
+    data: withDefaultNodeDisplayLines(node.data, settings)
+  };
+  if (nodeWithDisplayLines.data.dimensions) return nodeWithDisplayLines;
+  return withContentFittingDimensions(nodeWithDisplayLines, nodeWithDisplayLines.data, settings);
 }
 
 function edgeDisplayColor(color: string): string {
@@ -558,7 +599,8 @@ function nodesFromTurns(
   hiddenNodeIds: string[],
   customNodes: CustomNodeRecord[],
   layoutMode: LayoutMode,
-  hiddenRoot: boolean
+  hiddenRoot: boolean,
+  nodeSizeSettings: DefaultNodeSizeSettings = DEFAULT_NODE_SIZE_SETTINGS
 ): Node<TurnNodeData>[] {
   const layoutPositions = createLayoutPositions(turns, layoutMode);
   const rootOverride = nodeOverrides["conversation-root"];
@@ -568,7 +610,10 @@ function nodesFromTurns(
     type: "turnNode",
     dragHandle: ".turn-node__drag-handle",
     position: positions["conversation-root"] ?? layoutPositions["conversation-root"],
-    style: nodeDimensionsStyle(rootOverride?.dimensions, { width: 300, height: 180 }),
+    style: nodeDimensionsStyle(rootOverride?.dimensions, {
+      width: Math.max(300, nodeSizeSettings.defaultNodeWidth),
+      height: Math.max(180, nodeSizeSettings.defaultNodeHeight)
+    }),
     data: {
       title: rootTitle,
       summary:
@@ -585,7 +630,7 @@ function nodesFromTurns(
       isConversationRoot: true,
       onUpdate
     }
-  });
+  }, nodeSizeSettings);
 
   const hiddenNodeIdSet = new Set(hiddenNodeIds);
   const turnNodes = turns.filter((turn) => !hiddenNodeIdSet.has(turn.id)).map((turn, index) =>
@@ -594,7 +639,10 @@ function nodesFromTurns(
       type: "turnNode",
       dragHandle: ".turn-node__drag-handle",
       position: positions[turn.id] ?? layoutPositions[turn.id] ?? { x: 360, y: index * 190 },
-      style: nodeDimensionsStyle(nodeOverrides[turn.id]?.dimensions, { width: 280, height: 220 }),
+      style: nodeDimensionsStyle(nodeOverrides[turn.id]?.dimensions, {
+        width: nodeSizeSettings.defaultNodeWidth,
+        height: nodeSizeSettings.defaultNodeHeight
+      }),
       data: {
         title: nodeOverrides[turn.id]?.title ?? titleFromTurn(turn),
         summary: nodeOverrides[turn.id]?.summary ?? summaryFromTurn(turn),
@@ -614,7 +662,7 @@ function nodesFromTurns(
         onJump,
         isSummarizing: summarizingNodeIds.has(turn.id)
       }
-    })
+    }, nodeSizeSettings)
   );
   const extraNodes: Node<TurnNodeData>[] = customNodes.map((node) =>
     withInitialContentFittingDimensions({
@@ -622,7 +670,10 @@ function nodesFromTurns(
       type: "turnNode",
       dragHandle: ".turn-node__drag-handle",
       position: positions[node.id] ?? node.position,
-      style: nodeDimensionsStyle(nodeOverrides[node.id]?.dimensions ?? node.dimensions, { width: 280, height: 220 }),
+      style: nodeDimensionsStyle(nodeOverrides[node.id]?.dimensions ?? node.dimensions, {
+        width: nodeSizeSettings.defaultNodeWidth,
+        height: nodeSizeSettings.defaultNodeHeight
+      }),
       data: {
         title: nodeOverrides[node.id]?.title ?? node.title,
         summary: nodeOverrides[node.id]?.summary ?? node.summary,
@@ -639,7 +690,7 @@ function nodesFromTurns(
         isCustomNode: true,
         onUpdate
       }
-    })
+    }, nodeSizeSettings)
   );
 
   const mapNodes = [...turnNodes, ...extraNodes];
@@ -2220,6 +2271,7 @@ export function TurnMapCanvas({
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [topicGroups, setTopicGroups] = useState<TopicGroupRecord[]>([]);
   const [linkConnectionStyle, setLinkConnectionStyle] = useState<LinkConnectionStyle>("curved");
+  const [nodeSizeSettings, setNodeSizeSettings] = useState<DefaultNodeSizeSettings>(DEFAULT_NODE_SIZE_SETTINGS);
   const [summarizingNodeIds, setSummarizingNodeIds] = useState<Set<string>>(() => new Set());
   const [expandingNodeIds, setExpandingNodeIds] = useState<Set<string>>(() => new Set());
   const [pendingSuggestedEdges, setPendingSuggestedEdges] = useState<Edge[]>([]);
@@ -2391,12 +2443,12 @@ export function TurnMapCanvas({
             ? withContentFittingDimensions(node, {
                 ...node.data,
                 answerExpansion: updater(node.data.answerExpansion)
-              })
+              }, nodeSizeSettings)
             : node
         )
       );
     },
-    [setNodes]
+    [nodeSizeSettings, setNodes]
   );
 
   const updateMiniNodeInExpansion = useCallback(
@@ -2580,23 +2632,29 @@ export function TurnMapCanvas({
 
   useEffect(() => {
     let cancelled = false;
-    const applyConnectionStyle = (style: LinkConnectionStyle) => {
+    const applyUiSettings = (settings: { linkConnectionStyle: LinkConnectionStyle } & DefaultNodeSizeSettings) => {
+      const style = settings.linkConnectionStyle;
       activeLinkConnectionStyle = style;
       setLinkConnectionStyle(style);
+      setNodeSizeSettings({
+        defaultNodeWidth: settings.defaultNodeWidth,
+        defaultNodeHeight: settings.defaultNodeHeight,
+        defaultNodePromptRatio: settings.defaultNodePromptRatio
+      });
       setEdges((currentEdges) => currentEdges.map((edge) => applyEdgeStyle(edge, style)));
       setPendingSuggestedEdges((currentEdges) => currentEdges.map((edge) => applyEdgeStyle(edge, style)));
     };
 
-    const refreshConnectionStyle = () => {
+    const refreshUiSettings = () => {
       void loadUiSettings().then((settings) => {
-        if (!cancelled) applyConnectionStyle(settings.linkConnectionStyle);
+        if (!cancelled) applyUiSettings(settings);
       });
     };
 
-    refreshConnectionStyle();
+    refreshUiSettings();
     const listener = (_changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
       if (areaName === "local" && UI_SETTINGS_STORAGE_KEYS.some((key) => key in _changes)) {
-        refreshConnectionStyle();
+        refreshUiSettings();
       }
     };
     chrome.storage.onChanged.addListener(listener);
@@ -2663,13 +2721,13 @@ export function TurnMapCanvas({
               return withContentFittingDimensions(currentNode, {
                 ...currentNode.data,
                 ...protectedSummary.updates
-              });
+              }, nodeSizeSettings);
             }
             return withContentFittingDimensions(currentNode, {
               ...currentNode.data,
               title: summary.title,
               summary: summary.summary
-            });
+            }, nodeSizeSettings);
           })
         );
         reportApiTask({
@@ -2699,7 +2757,7 @@ export function TurnMapCanvas({
         });
       }
     },
-    [conversationId, reportApiTask, setNodes, t, turns]
+    [conversationId, nodeSizeSettings, reportApiTask, setNodes, t, turns]
   );
 
   const expandNodeAnswer = useCallback(
@@ -2712,12 +2770,12 @@ export function TurnMapCanvas({
             currentNode.id === nodeId && currentNode.data.answerExpansion
               ? withContentFittingDimensions(currentNode, {
                   ...currentNode.data,
-                  answerExpansion: {
-                    ...currentNode.data.answerExpansion,
-                    displayMode: "expanded",
-                    updatedAt: new Date().toISOString()
-                  }
-                })
+                answerExpansion: {
+                  ...currentNode.data.answerExpansion,
+                  displayMode: "expanded",
+                  updatedAt: new Date().toISOString()
+                }
+              }, nodeSizeSettings)
               : currentNode
           )
         );
@@ -2842,12 +2900,12 @@ export function TurnMapCanvas({
                   displayMode,
                   updatedAt: new Date().toISOString()
                 }
-              })
+              }, nodeSizeSettings)
             : node
         )
       );
     },
-    [selectedTurnNodes, setNodes]
+    [nodeSizeSettings, selectedTurnNodes, setNodes]
   );
 
   const deleteSelectedNodeExpansion = useCallback(() => {
@@ -2860,12 +2918,12 @@ export function TurnMapCanvas({
                 ...node.data,
                 collapsed: false,
                 answerExpansion: undefined
-              })
+              }, nodeSizeSettings)
           : node
       )
     );
     onStatus?.(t("status.expansionDeleted"));
-  }, [onStatus, selectedTurnNodes, setNodes, t]);
+  }, [nodeSizeSettings, onStatus, selectedTurnNodes, setNodes, t]);
 
   const summarizeAllNodes = useCallback(async () => {
     if (summarizingNodeIds.size > 0) return;
@@ -2902,7 +2960,7 @@ export function TurnMapCanvas({
                   return withContentFittingDimensions(node, {
                     ...node.data,
                     ...protectedSummary.updates
-                  });
+                  }, nodeSizeSettings);
                 })()
               : node
           )
@@ -2945,7 +3003,7 @@ export function TurnMapCanvas({
         progress: 100
       });
     }
-  }, [conversationId, nodes, reportApiTask, setNodes, summarizingNodeIds.size, t]);
+  }, [conversationId, nodeSizeSettings, nodes, reportApiTask, setNodes, summarizingNodeIds.size, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2972,6 +3030,12 @@ export function TurnMapCanvas({
       const activeConnectionStyle = uiSettings.linkConnectionStyle;
       activeLinkConnectionStyle = activeConnectionStyle;
       setLinkConnectionStyle(activeConnectionStyle);
+      const activeNodeSizeSettings = {
+        defaultNodeWidth: uiSettings.defaultNodeWidth,
+        defaultNodeHeight: uiSettings.defaultNodeHeight,
+        defaultNodePromptRatio: uiSettings.defaultNodePromptRatio
+      };
+      setNodeSizeSettings(activeNodeSizeSettings);
       const activeLayout = shouldRebuild ? defaultLayout : (storedGraph?.layoutMode ?? defaultLayout);
       const activeHiddenRoot = shouldRebuild ? false : (storedGraph?.hiddenRoot ?? false);
       const storedNodeOverrides = shouldRebuild ? {} : (storedGraph?.nodeOverrides ?? {});
@@ -3026,7 +3090,8 @@ export function TurnMapCanvas({
         activeHiddenNodeIds,
         storedCustomNodes,
         activeLayout,
-        activeHiddenRoot
+        activeHiddenRoot,
+        activeNodeSizeSettings
       );
       const nextEdges = [...autoEdges, ...validUserEdges.map((edge) => applyEdgeStyle(edge, activeConnectionStyle))];
       setNodes(nextNodes);
@@ -3196,7 +3261,7 @@ export function TurnMapCanvas({
               return withContentFittingDimensions(currentNode, {
                 ...currentNode.data,
                 ...protectedSummary.updates
-              });
+              }, nodeSizeSettings);
             })
           );
           if (updated) {
@@ -3243,7 +3308,7 @@ export function TurnMapCanvas({
       cancelled = true;
       autoSummarizeRunning.current = false;
     };
-  }, [autoSummarize, conversationId, nodes, reportApiTask, setNodes, t]);
+  }, [autoSummarize, conversationId, nodeSizeSettings, nodes, reportApiTask, setNodes, t]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -3467,7 +3532,7 @@ export function TurnMapCanvas({
     setHiddenNodeIds((currentIds) => [...new Set([...currentIds, ...sourceIds])]);
     setNodes((currentNodes) => [
       ...currentNodes.filter((node) => !sourceIds.has(node.id)),
-      {
+      withInitialContentFittingDimensions({
         id: mergedId,
         type: "turnNode",
         position: averagePosition,
@@ -3480,7 +3545,7 @@ export function TurnMapCanvas({
           sourceAnchors,
           onUpdate: updateNodeText
         }
-      }
+      }, nodeSizeSettings)
     ]);
     setEdges((currentEdges) => {
       const seen = new Set<string>();
@@ -3503,7 +3568,7 @@ export function TurnMapCanvas({
     setSelectedEdgeId(null);
     setSelectedRoot(false);
     onStatus?.(`Merged ${sortedNodes.length} nodes`);
-  }, [onStatus, selectedTurnNodes, setEdges, setNodes, updateNodeText]);
+  }, [nodeSizeSettings, onStatus, selectedTurnNodes, setEdges, setNodes, updateNodeText]);
 
   const collapseSelectedAsTopic = useCallback(() => {
     if (selectedTurnNodes.length < 2) return;
@@ -3574,7 +3639,7 @@ export function TurnMapCanvas({
       ...currentNodes
         .filter((node) => !sourceIds.has(node.id))
         .map((node) => ({ ...node, selected: false })),
-      {
+      withInitialContentFittingDimensions({
         id: topic.id,
         type: "turnNode",
         position: topic.position,
@@ -3591,7 +3656,7 @@ export function TurnMapCanvas({
           topicGroupMemberIds: topic.hiddenNodeIds,
           onUpdate: updateNodeText
         }
-      }
+      }, nodeSizeSettings)
     ]);
     setEdges((currentEdges) => {
       const keptEdges = currentEdges.filter(
@@ -3602,7 +3667,7 @@ export function TurnMapCanvas({
     setSelectedEdgeId(null);
     setSelectedRoot(false);
     onStatus?.(t("status.topicCollapsed", { count: topic.hiddenNodeIds.length }));
-  }, [edges, onStatus, selectedTurnNodes, setEdges, setNodes, t, topicGroups, updateNodeText]);
+  }, [edges, nodeSizeSettings, onStatus, selectedTurnNodes, setEdges, setNodes, t, topicGroups, updateNodeText]);
 
   const expandTopicGroup = useCallback(
     (groupId: string) => {
@@ -3685,7 +3750,7 @@ export function TurnMapCanvas({
     const sourceAnchors = sourceAnchorsFromNodeData(sourceNode.data);
     setNodes((currentNodes) => [
       ...currentNodes.map((node) => ({ ...node, selected: false })),
-      {
+      withInitialContentFittingDimensions({
         id: noteId,
         type: "turnNode",
         position: {
@@ -3701,12 +3766,12 @@ export function TurnMapCanvas({
           sourceAnchors,
           onUpdate: updateNodeText
         }
-      }
+      }, nodeSizeSettings)
     ]);
     setSelectedEdgeId(null);
     setSelectedRoot(false);
     onStatus?.(`Duplicated turn ${sourceNode.data.turn.turnIndex + 1} as note`);
-  }, [onStatus, selectedTurnNodes, setNodes, updateNodeText]);
+  }, [nodeSizeSettings, onStatus, selectedTurnNodes, setNodes, updateNodeText]);
 
   const splitSelectedNode = useCallback(() => {
     const sourceNode = selectedTurnNodes[0];
@@ -3723,7 +3788,7 @@ export function TurnMapCanvas({
     const splitTime = Date.now();
     const splitIds = [`custom-split-${splitTime}-a`, `custom-split-${splitTime}-b`];
     const sourceAnchors = sourceAnchorsFromNodeData(sourceNode.data);
-    const splitNodes: Node<TurnNodeData>[] = splitIds.map((id, index) => ({
+    const splitNodes: Node<TurnNodeData>[] = splitIds.map((id, index) => withInitialContentFittingDimensions({
       id,
       type: "turnNode",
       position: {
@@ -3741,7 +3806,7 @@ export function TurnMapCanvas({
         sourceAnchors,
         onUpdate: updateNodeText
       }
-    }));
+    }, nodeSizeSettings));
 
     setHiddenNodeIds((currentIds) =>
       sourceNode.data.turn ? [...new Set([...currentIds, sourceNode.id])] : currentIds
@@ -3766,7 +3831,7 @@ export function TurnMapCanvas({
     setSelectedEdgeId(null);
     setSelectedRoot(false);
     onStatus?.("Split node into two notes");
-  }, [onStatus, selectedTurnNodes, setEdges, setNodes, updateNodeText]);
+  }, [nodeSizeSettings, onStatus, selectedTurnNodes, setEdges, setNodes, updateNodeText]);
 
   const selectAllTurnNodes = useCallback(() => {
     setNodes((currentNodes) =>
@@ -3882,11 +3947,66 @@ export function TurnMapCanvas({
           ...node.data,
           collapsed: shouldCollapse,
           dimensions: shouldCollapse || isAutoCollapsedDimensions(node.data.dimensions) ? undefined : node.data.dimensions
-        });
+        }, nodeSizeSettings);
       })
     );
     onStatus?.(shouldCollapse ? t("status.nodesCollapsed") : t("status.nodesExpanded"));
-  }, [onStatus, selectedTurnNodes, setNodes, t]);
+  }, [nodeSizeSettings, onStatus, selectedTurnNodes, setNodes, t]);
+
+  const resetSelectedNodeSize = useCallback(() => {
+    if (selectedTurnNodes.length === 0) return;
+    const selectedIds = new Set(selectedTurnNodes.map((node) => node.id));
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => {
+        if (!selectedIds.has(node.id)) return node;
+        return withContentFittingDimensions(node, {
+          ...node.data,
+          dimensions: undefined
+        }, nodeSizeSettings);
+      })
+    );
+    onStatus?.(t("status.nodeSizeRestored"));
+  }, [nodeSizeSettings, onStatus, selectedTurnNodes, setNodes, t]);
+
+  const rebuildSelectedNode = useCallback(() => {
+    const selectedIds = new Set(selectedTurnNodes.map((node) => node.id));
+    if (selectedIds.size === 0) return;
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => {
+        if (!selectedIds.has(node.id)) return node;
+        const rebuiltData = node.data.turn
+          ? {
+              ...node.data,
+              title: titleFromTurn(node.data.turn),
+              summary: summaryFromTurn(node.data.turn),
+              status: undefined,
+              tags: [],
+              color: undefined,
+              collapsed: true,
+              important: undefined,
+              dimensions: undefined,
+              answerExpansion: undefined,
+              topicGroupId: undefined,
+              topicGroupMemberIds: undefined,
+              sourceAnchors: [node.data.turn.sourceAnchor]
+            }
+          : {
+              ...node.data,
+              status: undefined,
+              tags: [],
+              color: undefined,
+              collapsed: true,
+              important: undefined,
+              dimensions: undefined,
+              answerExpansion: undefined,
+              topicGroupId: undefined,
+              topicGroupMemberIds: undefined
+            };
+        return withContentFittingDimensions(node, rebuiltData, nodeSizeSettings);
+      })
+    );
+    onStatus?.(t("status.nodeRebuilt"));
+  }, [nodeSizeSettings, onStatus, selectedTurnNodes, setNodes, t]);
 
   const toggleSelectedNodeImportant = useCallback(() => {
     if (selectedTurnNodes.length === 0) return;
@@ -3914,7 +4034,7 @@ export function TurnMapCanvas({
 
     setNodes((currentNodes) => [
       ...currentNodes.map((node) => ({ ...node, selected: false })),
-      {
+      withInitialContentFittingDimensions({
         id: noteId,
         type: "turnNode",
         position,
@@ -3934,7 +4054,7 @@ export function TurnMapCanvas({
           sourceAnchors: sourceAnchors.length > 0 ? sourceAnchors : undefined,
           onUpdate: updateNodeText
         }
-      }
+      }, nodeSizeSettings)
     ]);
     setEdges((currentEdges) => [
       ...currentEdges.filter((edge) => edge.id !== selectedEdge.id),
@@ -3955,7 +4075,7 @@ export function TurnMapCanvas({
     ]);
     setSelectedEdgeId(null);
     onStatus?.("Converted link into note node");
-  }, [nodes, onStatus, selectedEdge, setEdges, setNodes, updateNodeText]);
+  }, [nodeSizeSettings, nodes, onStatus, selectedEdge, setEdges, setNodes, updateNodeText]);
 
   const suggestLinks = useCallback(async () => {
     const taskId = `suggest-links-${conversationId}`;
@@ -4966,10 +5086,16 @@ export function TurnMapCanvas({
                   <span className="color-swatch-button__preview" style={{ backgroundColor: color.value }} />
                 </button>
               ))}
+              <button
+                type="button"
+                className="color-swatch-button color-swatch-button--theme"
+                title={t("color.theme")}
+                onClick={() => updateSelectedNodeAppearance({ color: undefined })}
+              >
+                <span className="color-swatch-button__preview" />
+                <span className="color-swatch-button__label">{t("color.theme")}</span>
+              </button>
             </div>
-            <button type="button" onClick={() => updateSelectedNodeAppearance({ color: undefined })}>
-              {t("color.theme")}
-            </button>
           </div>
         </aside>
       ) : null}
@@ -4995,6 +5121,12 @@ export function TurnMapCanvas({
                 </button>
                 <button type="button" onClick={toggleSelectedNodeImportant}>
                   {t("action.important")}
+                </button>
+                <button type="button" onClick={resetSelectedNodeSize}>
+                  {t("action.restoreNodeSize")}
+                </button>
+                <button type="button" onClick={rebuildSelectedNode}>
+                  {t("action.rebuildNode")}
                 </button>
               </>
             ) : null}
@@ -5061,10 +5193,16 @@ export function TurnMapCanvas({
                   <span className="color-swatch-button__preview" style={{ backgroundColor: color.value }} />
                 </button>
               ))}
+              <button
+                type="button"
+                className="color-swatch-button color-swatch-button--theme"
+                title={t("color.theme")}
+                onClick={() => updateSelectedNodeAppearance({ color: undefined })}
+              >
+                <span className="color-swatch-button__preview" />
+                <span className="color-swatch-button__label">{t("color.theme")}</span>
+              </button>
             </div>
-            <button type="button" onClick={() => updateSelectedNodeAppearance({ color: undefined })}>
-              {t("color.theme")}
-            </button>
           </div>
         </aside>
       ) : null}

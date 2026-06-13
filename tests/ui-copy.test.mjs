@@ -246,6 +246,34 @@ test("link connection style setting is localized and defaults to curved edges", 
   assert.match(canvasSource, /setEdges\(\(currentEdges\) => currentEdges\.map\(\(edge\) => applyEdgeStyle\(edge, style\)\)\)/);
 });
 
+test("interface settings expose default node size controls and canvas uses them", async () => {
+  const settingsSource = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
+  const uiSettingsSource = await readFile(new URL("../src/side-panel/settings/ui-settings-storage.ts", import.meta.url), "utf8");
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+  const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  for (const key of [
+    "settings.defaultNodeSize",
+    "settings.defaultNodeWidth",
+    "settings.defaultNodeHeight",
+    "settings.defaultNodePromptRatio"
+  ]) {
+    assert.match(settingsSource, new RegExp(key.replaceAll(".", "\\.")));
+    assert.match(i18nSource, new RegExp(`"${key.replaceAll(".", "\\.")}"`));
+  }
+  assert.match(uiSettingsSource, /DEFAULT_NODE_SIZE_SETTINGS/);
+  assert.match(uiSettingsSource, /defaultNodeWidth:\s*280/);
+  assert.match(uiSettingsSource, /defaultNodeHeight:\s*220/);
+  assert.match(uiSettingsSource, /defaultNodePromptRatio:\s*0\.25/);
+  assert.match(uiSettingsSource, /normalizeDefaultNodePromptRatio/);
+  assert.match(settingsSource, /min="0"\s*max="1"\s*step="0\.25"/s);
+  assert.match(canvasSource, /nodeSizeSettings/);
+  assert.match(canvasSource, /settings\.defaultNodeWidth/);
+  assert.match(canvasSource, /settings\.defaultNodeHeight/);
+  assert.match(canvasSource, /settings\.defaultNodePromptRatio/);
+  assert.match(canvasSource, /withInitialContentFittingDimensions\(\{[\s\S]*nodeSizeSettings/);
+});
+
 test("reading and jumping settings are localized and wired to content scripts", async () => {
   const settingsSource = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
   const storageSource = await readFile(new URL("../src/shared/reading-settings.ts", import.meta.url), "utf8");
@@ -382,6 +410,29 @@ test("nodes use side connection handles with resize blind zones near handles", a
   assert.match(stylesSource, /\.turn-node \.react-flow__handle-left,\s*\.turn-node \.react-flow__handle-right\s*\{[^}]*z-index:\s*2;/s);
 });
 
+test("node panel keeps theme color in the swatch row and exposes reset actions", async () => {
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+  const stylesSource = await readFile(new URL("../src/side-panel/styles.css", import.meta.url), "utf8");
+  const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  assert.match(i18nSource, /"action\.expandAnswer": "Generate Mini Map"/);
+  assert.match(i18nSource, /"action\.expandAnswer": "生成迷你导图"/);
+  assert.match(canvasSource, /resetSelectedNodeSize/);
+  assert.match(canvasSource, /rebuildSelectedNode/);
+  assert.match(canvasSource, /action\.restoreNodeSize/);
+  assert.match(canvasSource, /action\.rebuildNode/);
+  assert.match(i18nSource, /"action\.restoreNodeSize"/);
+  assert.match(i18nSource, /"action\.rebuildNode"/);
+  assert.match(canvasSource, /withContentFittingDimensions\(node,[\s\S]*nodeSizeSettings\)/);
+  assert.match(canvasSource, /titleFromTurn\(node\.data\.turn\)/);
+  assert.match(canvasSource, /summaryFromTurn\(node\.data\.turn\)/);
+  assert.match(canvasSource, /color-swatch-button--theme/);
+  assert.match(canvasSource, /<span className="color-swatch-button__label">\{t\("color\.theme"\)\}<\/span>/);
+  assert.doesNotMatch(canvasSource, /<button type="button" onClick=\{\(\) => updateSelectedNodeAppearance\(\{ color: undefined \}\)\}>\s*\{t\("color\.theme"\)\}\s*<\/button>/);
+  assert.match(stylesSource, /\.color-swatch-button--theme/);
+  assert.match(stylesSource, /\.color-swatch-button__label/);
+});
+
 test("newly mapped turn and custom nodes default to collapsed", async () => {
   const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
 
@@ -391,8 +442,8 @@ test("newly mapped turn and custom nodes default to collapsed", async () => {
   assert.match(canvasSource, /collapsed:\s*snapshot\?\.collapsed \?\? true/);
   assert.ok([...canvasSource.matchAll(/collapsed:\s*true,\s*isCustomNode:\s*true/g)].length >= 4);
   assert.match(canvasSource, /function withInitialContentFittingDimensions/);
-  assert.match(canvasSource, /if \(node\.data\.dimensions\) return node/);
-  assert.match(canvasSource, /withContentFittingDimensions\(node,\s*node\.data\)/);
+  assert.match(canvasSource, /if \(nodeWithDisplayLines\.data\.dimensions\) return nodeWithDisplayLines/);
+  assert.match(canvasSource, /withContentFittingDimensions\(nodeWithDisplayLines,\s*nodeWithDisplayLines\.data,\s*settings\)/);
   assert.ok([...canvasSource.matchAll(/withInitialContentFittingDimensions\(\{/g)].length >= 3);
 });
 

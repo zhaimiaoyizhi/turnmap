@@ -26,6 +26,8 @@ export function TurnNode({ id, data, selected }: NodeProps) {
     color?: NodeColorName;
     collapsed?: boolean;
     important?: boolean;
+    titleLineClamp?: number;
+    summaryLineClamp?: number;
     dimensions?: { width: number; height: number; manual: boolean };
     answerExpansion?: AnswerExpansion;
     onUpdate?: (nodeId: string, updates: { title?: string; summary?: string }) => void;
@@ -78,11 +80,11 @@ export function TurnNode({ id, data, selected }: NodeProps) {
         nodeData.color ? "is-colored" : ""
       } ${nodeData.answerExpansion?.displayMode === "expanded" ? "is-expanded" : ""}`}
       style={
-        nodeData.color
-          ? ({
-              "--node-accent": colorValue(nodeData.color)
-            } as CSSProperties)
-          : undefined
+        {
+          "--node-accent": nodeData.color ? colorValue(nodeData.color) : undefined,
+          "--turn-node-title-line-clamp": nodeData.titleLineClamp ?? 2,
+          "--turn-node-summary-line-clamp": nodeData.summaryLineClamp ?? 7
+        } as CSSProperties
       }
     >
       <NodeResizer
@@ -143,6 +145,7 @@ export function TurnNode({ id, data, selected }: NodeProps) {
         />
       ) : (
         <h2
+          style={nodeData.titleLineClamp === 0 ? { display: "none" } : undefined}
           onContextMenu={jumpFromText}
           onDoubleClick={(event) => {
             event.stopPropagation();
@@ -178,6 +181,7 @@ export function TurnNode({ id, data, selected }: NodeProps) {
         />
       ) : (
         <p
+          style={nodeData.summaryLineClamp === 0 ? { display: "none" } : undefined}
           onContextMenu={jumpFromText}
           onDoubleClick={(event) => {
             event.stopPropagation();
