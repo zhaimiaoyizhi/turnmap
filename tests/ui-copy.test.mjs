@@ -367,6 +367,28 @@ test("node resize edge hit areas do not enlarge corner handles", async () => {
   assert.doesNotMatch(stylesSource, /\.turn-node \.react-flow__resize-control\.bottom\s*\{\s*(?:bottom|height):/s);
 });
 
+test("nodes use side connection handles with resize blind zones near handles", async () => {
+  const turnNodeSource = await readFile(new URL("../src/side-panel/graph/TurnNode.tsx", import.meta.url), "utf8");
+  const stylesSource = await readFile(new URL("../src/side-panel/styles.css", import.meta.url), "utf8");
+
+  assert.match(turnNodeSource, /<Handle type="target" position=\{Position\.Left\}/);
+  assert.match(turnNodeSource, /<Handle type="source" position=\{Position\.Right\}/);
+  assert.doesNotMatch(turnNodeSource, /<Handle type="target" position=\{Position\.Top\}/);
+  assert.doesNotMatch(turnNodeSource, /<Handle type="source" position=\{Position\.Bottom\}/);
+  assert.match(stylesSource, /\.turn-node \.react-flow__resize-control\.line\.left,\s*\.turn-node \.react-flow__resize-control\.line\.right\s*\{[^}]*top:\s*calc\(50% \+ 22px\);[^}]*height:\s*calc\(50% - 22px\);/s);
+  assert.match(stylesSource, /\.turn-node \.react-flow__handle-left,\s*\.turn-node \.react-flow__handle-right\s*\{[^}]*z-index:\s*2;/s);
+});
+
+test("newly mapped turn and custom nodes default to collapsed", async () => {
+  const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+
+  assert.match(canvasSource, /collapsed:\s*rootOverride\?\.collapsed \?\? true/);
+  assert.match(canvasSource, /collapsed:\s*nodeOverrides\[turn\.id\]\?\.collapsed \?\? true/);
+  assert.match(canvasSource, /collapsed:\s*nodeOverrides\[node\.id\]\?\.collapsed \?\? node\.collapsed \?\? true/);
+  assert.match(canvasSource, /collapsed:\s*snapshot\?\.collapsed \?\? true/);
+  assert.ok([...canvasSource.matchAll(/collapsed:\s*true,\s*isCustomNode:\s*true/g)].length >= 4);
+});
+
 test("layout and color controls use themed menu and persistent swatches", async () => {
   const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
   const stylesSource = await readFile(new URL("../src/side-panel/styles.css", import.meta.url), "utf8");

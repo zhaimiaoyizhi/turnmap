@@ -699,10 +699,17 @@ textarea:focus-visible {
 .turn-node .react-flow__resize-control.line.left,
 .turn-node .react-flow__resize-control.line.right {
   width: 14px;
+  top: calc(50% + 22px);
+  height: calc(50% - 22px);
 }
 
 .turn-node .react-flow__resize-control.line.bottom {
   height: 22px;
+}
+
+.turn-node .react-flow__handle-left,
+.turn-node .react-flow__handle-right {
+  z-index: 2;
 }
 
 .turn-node .react-flow__resize-control.handle {

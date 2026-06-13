@@ -572,7 +572,7 @@ function nodesFromTurns(
       status: rootOverride?.status,
       tags: normalizeNodeTags(rootOverride?.tags),
       color: rootOverride?.color,
-      collapsed: rootOverride?.collapsed,
+      collapsed: rootOverride?.collapsed ?? true,
       important: rootOverride?.important,
       dimensions: rootOverride?.dimensions,
       answerExpansion: rootOverride?.answerExpansion,
@@ -594,7 +594,7 @@ function nodesFromTurns(
       status: nodeOverrides[turn.id]?.status,
       tags: normalizeNodeTags(nodeOverrides[turn.id]?.tags),
       color: nodeOverrides[turn.id]?.color,
-      collapsed: nodeOverrides[turn.id]?.collapsed,
+      collapsed: nodeOverrides[turn.id]?.collapsed ?? true,
       important: nodeOverrides[turn.id]?.important,
       dimensions: nodeOverrides[turn.id]?.dimensions,
       answerExpansion: nodeOverrides[turn.id]?.answerExpansion,
@@ -621,7 +621,7 @@ function nodesFromTurns(
       tags: normalizeNodeTags(nodeOverrides[node.id]?.tags ?? node.tags),
       sourceAnchors: sanitizeSourceAnchors(nodeOverrides[node.id]?.sourceAnchors ?? node.sourceAnchors),
       color: nodeOverrides[node.id]?.color ?? node.color,
-      collapsed: nodeOverrides[node.id]?.collapsed ?? node.collapsed,
+      collapsed: nodeOverrides[node.id]?.collapsed ?? node.collapsed ?? true,
       important: nodeOverrides[node.id]?.important ?? node.important,
       dimensions: nodeOverrides[node.id]?.dimensions ?? node.dimensions,
       answerExpansion: nodeOverrides[node.id]?.answerExpansion ?? node.answerExpansion,
@@ -3465,6 +3465,7 @@ export function TurnMapCanvas({
         data: {
           title: mergedTitle,
           summary: mergedSummary,
+          collapsed: true,
           isCustomNode: true,
           sourceAnchors,
           onUpdate: updateNodeText
@@ -3571,6 +3572,7 @@ export function TurnMapCanvas({
         data: {
           title: topic.title,
           summary: topic.summary,
+          collapsed: true,
           isCustomNode: true,
           status: "review",
           tags: topic.tags,
@@ -3617,7 +3619,7 @@ export function TurnMapCanvas({
             status: snapshot?.status,
             tags: normalizeNodeTags(snapshot?.tags),
             color: isNodeColorName(snapshot?.color) ? snapshot.color : undefined,
-            collapsed: snapshot?.collapsed,
+            collapsed: snapshot?.collapsed ?? true,
             important: snapshot?.important,
             sourceAnchors: turn?.sourceAnchor ? [turn.sourceAnchor] : undefined,
             onUpdate: updateNodeText,
@@ -3684,6 +3686,7 @@ export function TurnMapCanvas({
         data: {
           title: `Note: ${sourceNode.data.title}`.slice(0, 120),
           summary: sourceNode.data.summary,
+          collapsed: true,
           isCustomNode: true,
           sourceAnchors,
           onUpdate: updateNodeText
@@ -3721,6 +3724,7 @@ export function TurnMapCanvas({
       data: {
         title: `${sourceNode.data.title} (${index + 1})`.slice(0, 120),
         summary: parts[index] || sourceNode.data.summary,
+        collapsed: true,
         isCustomNode: true,
         status: sourceNode.data.status,
         tags: sourceNode.data.tags,
@@ -3914,6 +3918,7 @@ export function TurnMapCanvas({
           ]
             .filter(Boolean)
             .join("\n"),
+          collapsed: true,
           isCustomNode: true,
           tags: ["link-note"],
           sourceAnchors: sourceAnchors.length > 0 ? sourceAnchors : undefined,

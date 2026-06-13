@@ -99,7 +99,7 @@ export function TurnNode({ id, data, selected }: NodeProps) {
           })
         }
       />
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Left} />
       <div className="turn-node__meta turn-node__drag-handle">
         <span>
           {nodeData.isConversationRoot
@@ -195,7 +195,7 @@ export function TurnNode({ id, data, selected }: NodeProps) {
           ))}
         </div>
       ) : null}
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Right} />
     </article>
   );
 }
