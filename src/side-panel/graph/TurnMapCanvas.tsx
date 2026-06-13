@@ -362,6 +362,11 @@ function withContentFittingDimensions(node: Node<TurnNodeData>, data: TurnNodeDa
   };
 }
 
+function withInitialContentFittingDimensions(node: Node<TurnNodeData>): Node<TurnNodeData> {
+  if (node.data.dimensions) return node;
+  return withContentFittingDimensions(node, node.data);
+}
+
 function edgeDisplayColor(color: string): string {
   const match = color.trim().match(/^#([0-9a-f]{6})$/i);
   if (!match) return color;
@@ -557,7 +562,7 @@ function nodesFromTurns(
   const layoutPositions = createLayoutPositions(turns, layoutMode);
   const rootOverride = nodeOverrides["conversation-root"];
   const rootTitle = rootTitleFromOverride(rootOverride?.title, conversationTitle);
-  const rootNode: Node<TurnNodeData> = {
+  const rootNode: Node<TurnNodeData> = withInitialContentFittingDimensions({
     id: "conversation-root",
     type: "turnNode",
     dragHandle: ".turn-node__drag-handle",
@@ -579,58 +584,62 @@ function nodesFromTurns(
       isConversationRoot: true,
       onUpdate
     }
-  };
+  });
 
   const hiddenNodeIdSet = new Set(hiddenNodeIds);
-  const turnNodes = turns.filter((turn) => !hiddenNodeIdSet.has(turn.id)).map((turn, index) => ({
-    id: turn.id,
-    type: "turnNode",
-    dragHandle: ".turn-node__drag-handle",
-    position: positions[turn.id] ?? layoutPositions[turn.id] ?? { x: 360, y: index * 190 },
-    style: nodeDimensionsStyle(nodeOverrides[turn.id]?.dimensions, { width: 280, height: 220 }),
-    data: {
-      title: nodeOverrides[turn.id]?.title ?? titleFromTurn(turn),
-      summary: nodeOverrides[turn.id]?.summary ?? summaryFromTurn(turn),
-      status: nodeOverrides[turn.id]?.status,
-      tags: normalizeNodeTags(nodeOverrides[turn.id]?.tags),
-      color: nodeOverrides[turn.id]?.color,
-      collapsed: nodeOverrides[turn.id]?.collapsed ?? true,
-      important: nodeOverrides[turn.id]?.important,
-      dimensions: nodeOverrides[turn.id]?.dimensions,
-      answerExpansion: nodeOverrides[turn.id]?.answerExpansion,
-      topicGroupId: nodeOverrides[turn.id]?.topicGroupId,
-      topicGroupMemberIds: nodeOverrides[turn.id]?.topicGroupMemberIds,
-      sourceAnchors: sanitizeSourceAnchors(nodeOverrides[turn.id]?.sourceAnchors ?? [turn.sourceAnchor]),
-      turn,
-      onUpdate,
-      onSummarize,
-      onJump,
-      isSummarizing: summarizingNodeIds.has(turn.id)
-    }
-  }));
-  const extraNodes: Node<TurnNodeData>[] = customNodes.map((node) => ({
-    id: node.id,
-    type: "turnNode",
-    dragHandle: ".turn-node__drag-handle",
-    position: positions[node.id] ?? node.position,
-    style: nodeDimensionsStyle(nodeOverrides[node.id]?.dimensions ?? node.dimensions, { width: 280, height: 220 }),
-    data: {
-      title: nodeOverrides[node.id]?.title ?? node.title,
-      summary: nodeOverrides[node.id]?.summary ?? node.summary,
-      status: nodeOverrides[node.id]?.status ?? node.status,
-      tags: normalizeNodeTags(nodeOverrides[node.id]?.tags ?? node.tags),
-      sourceAnchors: sanitizeSourceAnchors(nodeOverrides[node.id]?.sourceAnchors ?? node.sourceAnchors),
-      color: nodeOverrides[node.id]?.color ?? node.color,
-      collapsed: nodeOverrides[node.id]?.collapsed ?? node.collapsed ?? true,
-      important: nodeOverrides[node.id]?.important ?? node.important,
-      dimensions: nodeOverrides[node.id]?.dimensions ?? node.dimensions,
-      answerExpansion: nodeOverrides[node.id]?.answerExpansion ?? node.answerExpansion,
-      topicGroupId: nodeOverrides[node.id]?.topicGroupId ?? node.topicGroupId,
-      topicGroupMemberIds: nodeOverrides[node.id]?.topicGroupMemberIds ?? node.topicGroupMemberIds,
-      isCustomNode: true,
-      onUpdate
-    }
-  }));
+  const turnNodes = turns.filter((turn) => !hiddenNodeIdSet.has(turn.id)).map((turn, index) =>
+    withInitialContentFittingDimensions({
+      id: turn.id,
+      type: "turnNode",
+      dragHandle: ".turn-node__drag-handle",
+      position: positions[turn.id] ?? layoutPositions[turn.id] ?? { x: 360, y: index * 190 },
+      style: nodeDimensionsStyle(nodeOverrides[turn.id]?.dimensions, { width: 280, height: 220 }),
+      data: {
+        title: nodeOverrides[turn.id]?.title ?? titleFromTurn(turn),
+        summary: nodeOverrides[turn.id]?.summary ?? summaryFromTurn(turn),
+        status: nodeOverrides[turn.id]?.status,
+        tags: normalizeNodeTags(nodeOverrides[turn.id]?.tags),
+        color: nodeOverrides[turn.id]?.color,
+        collapsed: nodeOverrides[turn.id]?.collapsed ?? true,
+        important: nodeOverrides[turn.id]?.important,
+        dimensions: nodeOverrides[turn.id]?.dimensions,
+        answerExpansion: nodeOverrides[turn.id]?.answerExpansion,
+        topicGroupId: nodeOverrides[turn.id]?.topicGroupId,
+        topicGroupMemberIds: nodeOverrides[turn.id]?.topicGroupMemberIds,
+        sourceAnchors: sanitizeSourceAnchors(nodeOverrides[turn.id]?.sourceAnchors ?? [turn.sourceAnchor]),
+        turn,
+        onUpdate,
+        onSummarize,
+        onJump,
+        isSummarizing: summarizingNodeIds.has(turn.id)
+      }
+    })
+  );
+  const extraNodes: Node<TurnNodeData>[] = customNodes.map((node) =>
+    withInitialContentFittingDimensions({
+      id: node.id,
+      type: "turnNode",
+      dragHandle: ".turn-node__drag-handle",
+      position: positions[node.id] ?? node.position,
+      style: nodeDimensionsStyle(nodeOverrides[node.id]?.dimensions ?? node.dimensions, { width: 280, height: 220 }),
+      data: {
+        title: nodeOverrides[node.id]?.title ?? node.title,
+        summary: nodeOverrides[node.id]?.summary ?? node.summary,
+        status: nodeOverrides[node.id]?.status ?? node.status,
+        tags: normalizeNodeTags(nodeOverrides[node.id]?.tags ?? node.tags),
+        sourceAnchors: sanitizeSourceAnchors(nodeOverrides[node.id]?.sourceAnchors ?? node.sourceAnchors),
+        color: nodeOverrides[node.id]?.color ?? node.color,
+        collapsed: nodeOverrides[node.id]?.collapsed ?? node.collapsed ?? true,
+        important: nodeOverrides[node.id]?.important ?? node.important,
+        dimensions: nodeOverrides[node.id]?.dimensions ?? node.dimensions,
+        answerExpansion: nodeOverrides[node.id]?.answerExpansion ?? node.answerExpansion,
+        topicGroupId: nodeOverrides[node.id]?.topicGroupId ?? node.topicGroupId,
+        topicGroupMemberIds: nodeOverrides[node.id]?.topicGroupMemberIds ?? node.topicGroupMemberIds,
+        isCustomNode: true,
+        onUpdate
+      }
+    })
+  );
 
   const mapNodes = [...turnNodes, ...extraNodes];
   return layoutMode === "list" || hiddenRoot ? mapNodes : [rootNode, ...mapNodes];

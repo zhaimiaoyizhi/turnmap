@@ -387,6 +387,10 @@ test("newly mapped turn and custom nodes default to collapsed", async () => {
   assert.match(canvasSource, /collapsed:\s*nodeOverrides\[node\.id\]\?\.collapsed \?\? node\.collapsed \?\? true/);
   assert.match(canvasSource, /collapsed:\s*snapshot\?\.collapsed \?\? true/);
   assert.ok([...canvasSource.matchAll(/collapsed:\s*true,\s*isCustomNode:\s*true/g)].length >= 4);
+  assert.match(canvasSource, /function withInitialContentFittingDimensions/);
+  assert.match(canvasSource, /if \(node\.data\.dimensions\) return node/);
+  assert.match(canvasSource, /withContentFittingDimensions\(node,\s*node\.data\)/);
+  assert.ok([...canvasSource.matchAll(/withInitialContentFittingDimensions\(\{/g)].length >= 3);
 });
 
 test("layout and color controls use themed menu and persistent swatches", async () => {
