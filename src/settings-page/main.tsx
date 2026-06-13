@@ -342,195 +342,220 @@ function SettingsPage() {
 
           {settings ? (
             <>
-              <label>
-                {t("settings.defaultLayout")}
-                <select
-                  value={settings.defaultLayout}
-                  onChange={(event) => update({ defaultLayout: event.currentTarget.value as LayoutMode })}
-                >
-                  {LAYOUT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {t(LAYOUT_LABEL_KEYS[option.value])}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="settings-setting-group">
+                <div className="settings-setting-group__header">
+                  <strong>{t("settings.group.appearance")}</strong>
+                  <p>{t("settings.group.appearanceHint")}</p>
+                </div>
+                <div className="settings-control-grid">
+                  <label>
+                    {t("settings.theme")}
+                    <select
+                      value={settings.theme}
+                      onChange={(event) => update({ theme: event.currentTarget.value as UiSettings["theme"] })}
+                    >
+                      {THEME_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {t(THEME_LABEL_KEYS[option.value])}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              <label>
-                {t("settings.theme")}
-                <select
-                  value={settings.theme}
-                  onChange={(event) => update({ theme: event.currentTarget.value as UiSettings["theme"] })}
-                >
-                  {THEME_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {t(THEME_LABEL_KEYS[option.value])}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <label>
+                    {t("settings.language")}
+                    <select value={languageMode} onChange={(event) => void changeLanguage(event.currentTarget.value as LanguageMode)}>
+                      {LANGUAGE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {t(option.labelKey)}
+                        </option>
+                      ))}
+                      {customLanguages.map((language) => (
+                        <option key={language.id} value={`custom:${language.id}`}>
+                          {language.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p>{t("settings.languageHint")}</p>
+              </div>
 
-              <label>
-                {t("settings.language")}
-                <select value={languageMode} onChange={(event) => void changeLanguage(event.currentTarget.value as LanguageMode)}>
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {t(option.labelKey)}
-                    </option>
-                  ))}
-                  {customLanguages.map((language) => (
-                    <option key={language.id} value={`custom:${language.id}`}>
-                      {language.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="settings-setting-group">
+                <div className="settings-setting-group__header">
+                  <strong>{t("settings.group.languagePacks")}</strong>
+                  <p>{t("settings.group.languagePacksHint")}</p>
+                </div>
+                <div className="settings-section__inline">
+                  <label>
+                    {t("settings.customLanguage")}
+                    <input
+                      value={customLanguageName}
+                      onChange={(event) => setCustomLanguageName(event.currentTarget.value)}
+                      placeholder={t("settings.customLanguagePlaceholder")}
+                    />
+                  </label>
+                  <button type="button" onClick={() => void translateLanguage()} disabled={translating}>
+                    {translating ? t("settings.generatingTranslation") : t("settings.generateTranslation")}
+                  </button>
+                </div>
+                <p>{t("settings.customTranslationHint")}</p>
+                <p>{t("settings.translationRepairHint")}</p>
+                <div className="settings-section__inline">
+                  <div className="settings-file-picker">
+                    <span>{t("settings.importLanguagePack")}</span>
+                    <input
+                      ref={languagePackInputRef}
+                      className="file-input"
+                      type="file"
+                      accept="application/json,.json"
+                      aria-label={t("settings.importLanguagePack")}
+                      onChange={(event) => void importLanguagePackFile(event)}
+                    />
+                    <button type="button" onClick={() => languagePackInputRef.current?.click()}>
+                      {t("settings.languagePackChooseFile")}
+                    </button>
+                    <span className="settings-file-picker__name" title={languagePackFileName}>
+                      {languagePackFileName
+                        ? t("settings.languagePackSelected", { filename: languagePackFileName })
+                        : t("settings.languagePackNoFile")}
+                    </span>
+                  </div>
+                  <button type="button" onClick={exportCurrentLanguagePack} title={t("settings.exportLanguagePack")}>
+                    {t("settings.exportLanguagePack")}
+                  </button>
+                </div>
+              </div>
 
-              <p>{t("settings.languageHint")}</p>
+              <div className="settings-setting-group">
+                <div className="settings-setting-group__header">
+                  <strong>{t("settings.group.mapDefaults")}</strong>
+                  <p>{t("settings.group.mapDefaultsHint")}</p>
+                </div>
+                <div className="settings-control-grid">
+                  <label>
+                    {t("settings.defaultLayout")}
+                    <select
+                      value={settings.defaultLayout}
+                      onChange={(event) => update({ defaultLayout: event.currentTarget.value as LayoutMode })}
+                    >
+                      {LAYOUT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {t(LAYOUT_LABEL_KEYS[option.value])}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              <label>
-                {t("settings.linkConnectionStyle")}
-                <select
-                  value={settings.linkConnectionStyle}
-                  onChange={(event) =>
-                    update({ linkConnectionStyle: event.currentTarget.value as UiSettings["linkConnectionStyle"] })
-                  }
-                >
-                  <option value="curved">{t("settings.linkConnectionStyleCurved")}</option>
-                  <option value="angled">{t("settings.linkConnectionStyleAngled")}</option>
-                </select>
-              </label>
+                  <label>
+                    {t("settings.linkConnectionStyle")}
+                    <select
+                      value={settings.linkConnectionStyle}
+                      onChange={(event) =>
+                        update({ linkConnectionStyle: event.currentTarget.value as UiSettings["linkConnectionStyle"] })
+                      }
+                    >
+                      <option value="curved">{t("settings.linkConnectionStyleCurved")}</option>
+                      <option value="angled">{t("settings.linkConnectionStyleAngled")}</option>
+                    </select>
+                  </label>
 
-              <fieldset className="settings-fieldset">
-                <legend>{t("settings.defaultNodeSize")}</legend>
-                <NumericSliderSetting
-                  label={t("settings.defaultNodeWidth")}
-                  description={t("settings.defaultNodeWidthHint")}
-                  value={settings.defaultNodeWidth}
-                  min={220}
-                  max={1200}
-                  step={10}
-                  suffix="px"
-                  onChange={(value) => update({ defaultNodeWidth: normalizeDefaultNodeWidth(value) })}
-                  normalize={normalizeDefaultNodeWidth}
-                />
-                <NumericSliderSetting
-                  label={t("settings.defaultNodeHeight")}
-                  description={t("settings.defaultNodeHeightHint")}
-                  value={settings.defaultNodeHeight}
-                  min={120}
-                  max={900}
-                  step={10}
-                  suffix="px"
-                  onChange={(value) => update({ defaultNodeHeight: normalizeDefaultNodeHeight(value) })}
-                  normalize={normalizeDefaultNodeHeight}
-                />
+                  <label>
+                    {t("settings.nodeColorRenderMode")}
+                    <select
+                      value={settings.nodeColorRenderMode}
+                      onChange={(event) =>
+                        update({ nodeColorRenderMode: event.currentTarget.value as UiSettings["nodeColorRenderMode"] })
+                      }
+                    >
+                      <option value="gradient">{t("settings.nodeColorRenderGradient")}</option>
+                      <option value="solid">{t("settings.nodeColorRenderSolid")}</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="settings-fieldset">
+                  <div className="settings-fieldset__title">{t("settings.defaultNodeSize")}</div>
+                  <NumericSliderSetting
+                    label={t("settings.defaultNodeWidth")}
+                    description={t("settings.defaultNodeWidthHint")}
+                    value={settings.defaultNodeWidth}
+                    min={220}
+                    max={1200}
+                    step={10}
+                    suffix="px"
+                    onChange={(value) => update({ defaultNodeWidth: normalizeDefaultNodeWidth(value) })}
+                    normalize={normalizeDefaultNodeWidth}
+                  />
+                  <NumericSliderSetting
+                    label={t("settings.defaultNodeHeight")}
+                    description={t("settings.defaultNodeHeightHint")}
+                    value={settings.defaultNodeHeight}
+                    min={120}
+                    max={900}
+                    step={10}
+                    suffix="px"
+                    onChange={(value) => update({ defaultNodeHeight: normalizeDefaultNodeHeight(value) })}
+                    normalize={normalizeDefaultNodeHeight}
+                  />
+                  <label className="settings-range-control">
+                    <span>{t("settings.defaultNodePromptRatio")}</span>
+                    <div className="settings-range-control__row">
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.25"
+                        value={settings.defaultNodePromptRatio}
+                        onChange={(event) =>
+                          update({ defaultNodePromptRatio: normalizeDefaultNodePromptRatio(event.currentTarget.value) })
+                        }
+                      />
+                      <span>{Math.round(settings.defaultNodePromptRatio * 100)}%</span>
+                    </div>
+                    <p>{t("settings.defaultNodePromptRatioHint")}</p>
+                  </label>
+                </div>
                 <label className="settings-range-control">
-                  <span>{t("settings.defaultNodePromptRatio")}</span>
+                  <span>{t("settings.nodeColorRenderStrength")}</span>
                   <div className="settings-range-control__row">
                     <input
                       type="range"
                       min="0"
-                      max="1"
-                      step="0.25"
-                      value={settings.defaultNodePromptRatio}
-                      onChange={(event) =>
-                        update({ defaultNodePromptRatio: normalizeDefaultNodePromptRatio(event.currentTarget.value) })
-                      }
+                      max="100"
+                      step="5"
+                      value={settings.nodeColorRenderStrength}
+                      onChange={(event) => update({ nodeColorRenderStrength: Number(event.currentTarget.value) })}
                     />
-                    <span>{Math.round(settings.defaultNodePromptRatio * 100)}%</span>
+                    <span>{settings.nodeColorRenderStrength}%</span>
                   </div>
-                  <p>{t("settings.defaultNodePromptRatioHint")}</p>
                 </label>
-              </fieldset>
-
-              <div className="settings-section__inline">
-                <label>
-                  {t("settings.customLanguage")}
-                  <input
-                    value={customLanguageName}
-                    onChange={(event) => setCustomLanguageName(event.currentTarget.value)}
-                    placeholder={t("settings.customLanguagePlaceholder")}
-                  />
-                </label>
-                <button type="button" onClick={() => void translateLanguage()} disabled={translating}>
-                  {translating ? t("settings.generatingTranslation") : t("settings.generateTranslation")}
-                </button>
               </div>
 
-              <p>{t("settings.customTranslationHint")}</p>
-              <p>{t("settings.translationRepairHint")}</p>
-
-              <div className="settings-section__inline">
-                <div className="settings-file-picker">
-                  <span>{t("settings.importLanguagePack")}</span>
-                  <input
-                    ref={languagePackInputRef}
-                    className="file-input"
-                    type="file"
-                    accept="application/json,.json"
-                    aria-label={t("settings.importLanguagePack")}
-                    onChange={(event) => void importLanguagePackFile(event)}
-                  />
-                  <button type="button" onClick={() => languagePackInputRef.current?.click()}>
-                    {t("settings.languagePackChooseFile")}
-                  </button>
-                  <span className="settings-file-picker__name" title={languagePackFileName}>
-                    {languagePackFileName
-                      ? t("settings.languagePackSelected", { filename: languagePackFileName })
-                      : t("settings.languagePackNoFile")}
-                  </span>
+              <div className="settings-setting-group">
+                <div className="settings-setting-group__header">
+                  <strong>{t("settings.group.pageHelpers")}</strong>
+                  <p>{t("settings.group.pageHelpersHint")}</p>
                 </div>
-                <button type="button" onClick={exportCurrentLanguagePack} title={t("settings.exportLanguagePack")}>
-                  {t("settings.exportLanguagePack")}
-                </button>
+                <div className="settings-check-grid">
+                  <label className="settings-panel__check">
+                    <input
+                      type="checkbox"
+                      checked={settings.launcherEnabled}
+                      onChange={(event) => update({ launcherEnabled: event.currentTarget.checked })}
+                    />
+                    {t("settings.showLauncher")}
+                  </label>
+
+                  <label className="settings-panel__check">
+                    <input
+                      type="checkbox"
+                      checked={settings.floatingPanelEnabled}
+                      onChange={(event) => update({ floatingPanelEnabled: event.currentTarget.checked })}
+                    />
+                    {t("settings.enableFloat")}
+                  </label>
+                </div>
               </div>
-
-              <fieldset className="settings-fieldset">
-                <legend>{t("settings.nodeColorRendering")}</legend>
-                <label>
-                  {t("settings.nodeColorRenderMode")}
-                  <select
-                    value={settings.nodeColorRenderMode}
-                    onChange={(event) =>
-                      update({ nodeColorRenderMode: event.currentTarget.value as UiSettings["nodeColorRenderMode"] })
-                    }
-                  >
-                    <option value="gradient">{t("settings.nodeColorRenderGradient")}</option>
-                    <option value="solid">{t("settings.nodeColorRenderSolid")}</option>
-                  </select>
-                </label>
-                <label>
-                  {t("settings.nodeColorRenderStrength")}
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="5"
-                    value={settings.nodeColorRenderStrength}
-                    onChange={(event) => update({ nodeColorRenderStrength: Number(event.currentTarget.value) })}
-                  />
-                  <span>{settings.nodeColorRenderStrength}%</span>
-                </label>
-              </fieldset>
-
-              <label className="settings-panel__check">
-                <input
-                  type="checkbox"
-                  checked={settings.floatingPanelEnabled}
-                  onChange={(event) => update({ floatingPanelEnabled: event.currentTarget.checked })}
-                />
-                {t("settings.enableFloat")}
-              </label>
-
-              <label className="settings-panel__check">
-                <input
-                  type="checkbox"
-                  checked={settings.launcherEnabled}
-                  onChange={(event) => update({ launcherEnabled: event.currentTarget.checked })}
-                />
-                {t("settings.showLauncher")}
-              </label>
 
               <div className="settings-panel__actions">
                 <button type="button" onClick={save}>

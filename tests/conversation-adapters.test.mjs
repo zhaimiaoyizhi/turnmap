@@ -237,6 +237,20 @@ test("content script can repair missing launcher after a previous partial start"
   assert.match(source, /startTurnMapContentMessageListener\(\)/);
 });
 
+test("launcher can be resynced after side panel injection and remains visibly styled without its image", () => {
+  const contentSource = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
+  const messagingSource = readFileSync(new URL("../src/shared/messaging.ts", import.meta.url), "utf8");
+  const typesSource = readFileSync(new URL("../src/shared/types.ts", import.meta.url), "utf8");
+
+  assert.match(typesSource, /type:\s*"TURNMAP_SYNC_LAUNCHER"/);
+  assert.match(contentSource, /message\.type === "TURNMAP_SYNC_LAUNCHER"/);
+  assert.match(contentSource, /syncLauncherFromStorage\(\)/);
+  assert.match(messagingSource, /syncLauncherInTab\(tabId,\s*tab\?\.url\)/);
+  assert.match(messagingSource, /type:\s*"TURNMAP_SYNC_LAUNCHER"/);
+  assert.match(contentSource, /\.turnmap-launcher \{[\s\S]*background:\s*linear-gradient/);
+  assert.match(contentSource, /\.turnmap-launcher::after \{[\s\S]*content:\s*"TM"/);
+});
+
 test("joinUniqueWebTextParts removes nested selector duplicates", () => {
   const text = joinUniqueWebTextParts([
     "Search TurnMap GitHub Suggestions Check whether the user name is spelled correctly.",

@@ -25,13 +25,18 @@ export async function requestTurnsFromActiveTab(options?: {
   if (!tabId) return null;
 
   const firstResponse = await requestTurns(tabId, options?.harvest ?? false, options?.ensureFull ?? false);
-  if (firstResponse) return firstResponse;
+  if (firstResponse) {
+    void syncLauncherInTab(tabId, tab?.url);
+    return firstResponse;
+  }
 
   const injected = await injectContentScript(tabId, tab?.url);
   if (!injected) return null;
 
   await delay(150);
-  return requestTurns(tabId, options?.harvest ?? false, options?.ensureFull ?? false);
+  const response = await requestTurns(tabId, options?.harvest ?? false, options?.ensureFull ?? false);
+  void syncLauncherInTab(tabId, tab?.url);
+  return response;
 }
 
 async function getActiveTabId(): Promise<number | undefined> {
@@ -83,6 +88,29 @@ async function injectContentScript(tabId: number, tabUrl?: string): Promise<bool
         target: { tabId },
         files: ["content/index.js"]
       });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function syncLauncherInTab(tabId: number, tabUrl?: string): Promise<boolean> {
+  const send = async () => {
+    await chrome.tabs.sendMessage(tabId, {
+      type: "TURNMAP_SYNC_LAUNCHER"
+    });
+  };
+
+  try {
+    await send();
+    return true;
+  } catch {
+    const injected = await injectContentScript(tabId, tabUrl);
+    if (!injected) return false;
+    await delay(150);
+    try {
+      await send();
       return true;
     } catch {
       return false;

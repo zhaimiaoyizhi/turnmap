@@ -68,6 +68,10 @@ export type SetFloatingPanelMessage = {
   enabled: boolean;
 };
 
+export type SyncLauncherMessage = {
+  type: "TURNMAP_SYNC_LAUNCHER";
+};
+
 export type OpenSidePanelMessage = {
   type: "TURNMAP_OPEN_SIDE_PANEL";
 };
@@ -98,6 +102,7 @@ export type TurnMapMessage =
   | RequestTurnsMessage
   | JumpToTurnMessage
   | SetFloatingPanelMessage
+  | SyncLauncherMessage
   | OpenSidePanelMessage
   | OpenSettingsMessage
   | FetchConversationApiMessage;

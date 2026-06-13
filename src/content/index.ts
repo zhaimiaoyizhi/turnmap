@@ -463,7 +463,7 @@ function ensureLauncherStyle(): void {
       all: initial;
       align-items: center;
       appearance: none;
-      background: transparent;
+      background: linear-gradient(135deg, #10a37f 0%, #1677c8 100%);
       border: 0;
       border-radius: 12px;
       box-shadow: 0 12px 28px rgba(10, 40, 68, 0.28);
@@ -484,12 +484,24 @@ function ensureLauncherStyle(): void {
       width: 44px;
       z-index: 2147483599;
     }
+    .turnmap-launcher::after {
+      color: #ffffff;
+      content: "TM";
+      font: 800 12px Inter, ui-sans-serif, system-ui, sans-serif;
+      inset: 0;
+      letter-spacing: 0;
+      line-height: 44px;
+      position: absolute;
+      text-align: center;
+      z-index: 0;
+    }
     .turnmap-launcher img {
       display: block;
       height: 44px;
       object-fit: contain;
       pointer-events: none;
       width: 44px;
+      z-index: 1;
     }
     .turnmap-launcher:hover {
       box-shadow: 0 14px 34px rgba(20, 120, 200, 0.32);
@@ -715,6 +727,12 @@ function startTurnMapContentMessageListener(): void {
 
     if (message.type === "TURNMAP_SET_FLOATING_PANEL") {
       setFloatingPanel(Boolean((message as { enabled?: unknown }).enabled));
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message.type === "TURNMAP_SYNC_LAUNCHER") {
+      syncLauncherFromStorage();
       sendResponse({ ok: true });
       return true;
     }

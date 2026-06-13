@@ -274,6 +274,29 @@ test("interface settings expose default node size controls and canvas uses them"
   assert.match(canvasSource, /withInitialContentFittingDimensions\(\{[\s\S]*nodeSizeSettings/);
 });
 
+test("settings page groups controls by target object", async () => {
+  const settingsSource = await readFile(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
+  const stylesSource = await readFile(new URL("../src/settings-page/settings-page.css", import.meta.url), "utf8");
+  const i18nSource = await readFile(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  for (const key of [
+    "settings.group.appearance",
+    "settings.group.mapDefaults",
+    "settings.group.pageHelpers",
+    "settings.group.languagePacks"
+  ]) {
+    assert.match(settingsSource, new RegExp(key.replaceAll(".", "\\.")));
+    assert.match(i18nSource, new RegExp(`"${key.replaceAll(".", "\\.")}"`));
+  }
+
+  assert.match(settingsSource, /className="settings-setting-group"/);
+  assert.match(settingsSource, /className="settings-control-grid"/);
+  assert.match(settingsSource, /className="settings-check-grid"/);
+  assert.match(stylesSource, /\.settings-setting-group/);
+  assert.match(stylesSource, /\.settings-control-grid/);
+  assert.match(stylesSource, /\.settings-check-grid/);
+});
+
 test("default node size refreshes are idempotent to avoid graph reload loops", async () => {
   const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
 
