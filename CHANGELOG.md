@@ -2,6 +2,28 @@
 
 All notable changes to TurnMap will be documented in this file.
 
+## [0.7.2] - Reading, Jumping, And Settings Stability
+
+### Added
+
+- Added user-tunable Reading and Jumping controls for scan speed, edge wait time, and fallback jump search strength.
+- Added a separate Reading and Jumping settings section after Interface settings and before Updates.
+- Added default node-size controls for ordinary turn nodes.
+
+### Changed
+
+- Updated package and extension metadata to `0.7.2`.
+- Updated Refresh and Deep Scan behavior so switching between AI conversations first resolves the current conversation map before replacing the visible graph.
+- Tightened mini mind map link routing for cleaner corresponding mini-node connections.
+- Polished settings layout and launcher synchronization.
+
+### Fixed
+
+- Fixed a content-script startup regression where reading/jump settings could be emitted as an extra bundle chunk, preventing the page launcher from appearing and blocking conversation reads.
+- Fixed short-conversation lazy jump scrolling so failed jumps do not create long visible page jitter.
+- Fixed default-node-size setting refresh loops that could reload the graph unexpectedly.
+- Fixed collapsed/default node sizing regressions so node dimensions better fit the displayed content.
+
 ## [0.7.1] - Graph Hygiene And Link Reliability
 
 ### Added

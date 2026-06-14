@@ -48,7 +48,7 @@ TurnMap turns a single long web AI thread into a navigable graph. The map keeps 
 
 Dense answers can become compact mini maps inside the original node. This is useful for research summaries, naming debates, step-by-step plans, comparison tables, or any answer that is too long to stay readable as plain chat text.
 
-![Exported TurnMap PNG showing colored conversation nodes and an expanded answer mini mind map](docs/assets/提高ChatMap曝光率建议.turnmap.png)
+![Exported TurnMap PNG showing colored conversation nodes and an expanded answer mini mind map](docs/assets/提高TurnMap曝光率建议.turnmap.png)
 
 ### Export What You Build
 
@@ -60,7 +60,7 @@ TurnMap can export both editable backups and shareable visual files. For long-te
 
 ### Tune The Workspace
 
-The settings page keeps provider setup, interface defaults, themes, language packs, link style, node color rendering, launcher behavior, and update preferences away from the map canvas.
+The settings page keeps provider setup, interface defaults, themes, language packs, link style, node color rendering, Reading and Jumping behavior, launcher behavior, and update preferences away from the map canvas.
 
 ![TurnMap settings page with AI provider, interface, language, link style, and node color rendering controls](docs/assets/设置截图页.png)
 
@@ -113,7 +113,7 @@ For preview builds, download the release zip from GitHub Releases, unzip it, and
 
 GitHub/unpacked installs require manual updates. Store distribution is the right path for automatic browser-managed updates.
 
-Latest preview package: `turnmap-v0.7.1.zip`. This release highlights API-powered answer expansion into compact mini mind maps, clearer mini-map layout and export rendering, stronger graph hygiene, stable newly generated turn IDs, weighted links, proxy edge metadata, ChatGPT extraction repair, and appearance customization such as normal-link style selection plus persistent color previews. For long-term backup or transfer, export TurnMap JSON first because it preserves TurnMap-specific editing state more completely than visual formats.
+Latest preview package: `turnmap-v0.7.2.zip`. This maintenance release keeps the 0.7.x mini mind map and appearance customization focus, and adds safer reading/jumping controls, a separate Reading and Jumping settings section, more reliable content-script startup for the page launcher, safer map switching after Refresh or Deep Scan, default node-size controls, and tighter mini-map link routing. For long-term backup or transfer, export TurnMap JSON first because it preserves TurnMap-specific editing state more completely than visual formats.
 
 ## Basic Usage
 
@@ -244,6 +244,7 @@ scripts           Build and packaging helpers
 - `0.6.0`: add local Topic Analysis that preclassifies high-confidence candidate links for review without provider embeddings.
 - `0.7.0`: improve knowledge organization with answer mini mind maps, smarter links, batch link review, topic collapse, bulk tags, and saved node sizing.
 - `0.7.1`: refine mini mind maps and appearance customization while hardening graph hygiene and automatic link reliability with stable new turn IDs, link weights, topic proxy metadata, and local repair logs.
+- `0.7.2`: stabilize 0.7.x reading, jumping, launcher startup, map switching, default node sizing, and settings layout before the next larger feature phase.
 - `0.8.0`: migrate compatibility to Chrome; Firefox is reserved for a later sidebar-specific phase.
 - `0.9.0`: public beta with 100+ node performance, overflow-safe large-map export, and cancellable AI batch jobs.
 - `0.10.0`: prepare store publication, with Edge Add-ons first and Chrome Web Store following Chrome compatibility.
