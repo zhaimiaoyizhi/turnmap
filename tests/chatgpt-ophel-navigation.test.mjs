@@ -141,3 +141,39 @@ test("ChatGPT native TOC can recover hidden Prompt labels from sibling title tex
     "Ask about TurnMap"
   );
 });
+
+test("ChatGPT ophel GPL port sorts turn shells by native conversation-turn order", async () => {
+  const { getChatGptTurnShellSortIndex } = await loadNavigationModule();
+
+  assert.equal(
+    getChatGptTurnShellSortIndex({ getAttribute: (name) => (name === "data-testid" ? "conversation-turn-17" : null) }),
+    17
+  );
+  assert.equal(
+    getChatGptTurnShellSortIndex({ getAttribute: (name) => (name === "data-turn" ? "3" : null) }),
+    3
+  );
+  assert.equal(getChatGptTurnShellSortIndex({ getAttribute: () => null }), Number.MAX_SAFE_INTEGER);
+});
+
+test("ChatGPT ophel GPL port keeps a runtime cache keyed by navigation identity", async () => {
+  const { clearChatGptOphelRuntimeCache, getChatGptOphelRuntimeCacheSnapshot, rememberChatGptOphelTarget } =
+    await loadNavigationModule();
+
+  clearChatGptOphelRuntimeCache();
+  rememberChatGptOphelTarget({
+    index: 4,
+    text: "Repeated prompt",
+    messageId: "msg-4",
+    turnId: "conversation-turn-8"
+  });
+
+  const snapshot = getChatGptOphelRuntimeCacheSnapshot();
+
+  assert.equal(snapshot.length, 1);
+  assert.equal(snapshot[0].navigationId, "chatgpt-message:msg-4");
+  assert.equal(snapshot[0].messageId, "msg-4");
+  assert.equal(snapshot[0].turnId, "conversation-turn-8");
+  assert.equal(snapshot[0].nativeTocIndex, 4);
+  assert.equal(snapshot[0].userPreview, "Repeated prompt");
+});

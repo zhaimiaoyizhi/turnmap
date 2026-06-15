@@ -5,6 +5,8 @@ import type { SourceAnchor, Turn, TurnNavigation } from "../shared/types";
 const EMPTY_ASSISTANT_REPLY = "No assistant text captured";
 const HIDDEN_PROMPT_LABEL = /^Prompt\s+(\d+)$/i;
 const NATIVE_NAVIGATION_PREFIX = "chatgpt-native-user-query";
+const CHATGPT_TURN_SHELL_SELECTOR = "section[data-turn], [data-testid^='conversation-turn']";
+const CACHE_WAIT_STEP_MS = 80;
 
 type OphelNavigationSeed = {
   index: number;
@@ -16,7 +18,33 @@ type OphelNavigationSeed = {
 type NativeUserEntry = OphelNavigationSeed & {
   button?: HTMLElement;
   element?: HTMLElement;
+  shell?: HTMLElement;
 };
+
+type AttributeReader = {
+  getAttribute(name: string): string | null;
+};
+
+type RuntimeCacheEntry = {
+  navigationId: string;
+  textHash: string;
+  userPreview: string;
+  nativeTocIndex?: number;
+  turnIndex?: number;
+  messageId?: string;
+  turnId?: string;
+  button?: HTMLElement;
+  element?: HTMLElement;
+  shell?: HTMLElement;
+  lastSeenAt: number;
+};
+
+export type ChatGptOphelRuntimeCacheSnapshot = Omit<
+  RuntimeCacheEntry,
+  "button" | "element" | "shell" | "lastSeenAt"
+>;
+
+const runtimeNavigationCache = new Map<string, RuntimeCacheEntry>();
 
 export type OphelNavigationResolveResult =
   | {
@@ -85,6 +113,48 @@ export function createChatGptTurnNavigation(seed: OphelNavigationSeed): TurnNavi
     textHash: hashText(normalizeText(seed.text)),
     userPreview: preview(seed.text)
   };
+}
+
+export function rememberChatGptOphelTarget(seed: NativeUserEntry): TurnNavigation {
+  const normalizedSeed = {
+    ...seed,
+    text: normalizeText(seed.text)
+  };
+  const navigation = createChatGptTurnNavigation(normalizedSeed);
+  const entry: RuntimeCacheEntry = {
+    navigationId: navigation.navigationId,
+    textHash: navigation.textHash ?? hashText(normalizedSeed.text),
+    userPreview: navigation.userPreview ?? preview(normalizedSeed.text),
+    nativeTocIndex: navigation.nativeTocIndex,
+    turnIndex: navigation.turnIndex,
+    messageId: navigation.messageId,
+    turnId: navigation.turnId,
+    button: seed.button,
+    element: seed.element,
+    shell: seed.shell,
+    lastSeenAt: Date.now()
+  };
+
+  const previous = runtimeNavigationCache.get(entry.navigationId);
+  runtimeNavigationCache.set(entry.navigationId, {
+    ...previous,
+    ...entry,
+    button: entry.button ?? previous?.button,
+    element: entry.element ?? previous?.element,
+    shell: entry.shell ?? previous?.shell
+  });
+
+  return navigation;
+}
+
+export function clearChatGptOphelRuntimeCache(): void {
+  runtimeNavigationCache.clear();
+}
+
+export function getChatGptOphelRuntimeCacheSnapshot(): ChatGptOphelRuntimeCacheSnapshot[] {
+  return Array.from(runtimeNavigationCache.values())
+    .sort((left, right) => (left.nativeTocIndex ?? left.turnIndex ?? 0) - (right.nativeTocIndex ?? right.turnIndex ?? 0))
+    .map(({ button: _button, element: _element, shell: _shell, lastSeenAt: _lastSeenAt, ...entry }) => entry);
 }
 
 function sourceAnchorFromSeed(seed: OphelNavigationSeed): SourceAnchor {
@@ -292,6 +362,67 @@ function getTurnId(element: HTMLElement): string | undefined {
   );
 }
 
+export function getChatGptTurnShellSortIndex(element: AttributeReader): number {
+  const explicitDataTurn = element.getAttribute("data-turn");
+  if (explicitDataTurn) {
+    const parsed = Number.parseInt(explicitDataTurn, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  const testId = element.getAttribute("data-testid") ?? "";
+  const testIdMatch = /conversation-turn-(\d+)/i.exec(testId);
+  if (testIdMatch?.[1]) return Number.parseInt(testIdMatch[1], 10);
+
+  const turnId = element.getAttribute("data-turn-id") ?? element.getAttribute("data-turn-id-container") ?? "";
+  const turnIdMatch = /(\d+)$/.exec(turnId);
+  if (turnIdMatch?.[1]) return Number.parseInt(turnIdMatch[1], 10);
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
+export function getAllChatGptTurnShellsSorted(doc: Document = document): HTMLElement[] {
+  const candidates = Array.from(doc.querySelectorAll<HTMLElement>(CHATGPT_TURN_SHELL_SELECTOR));
+  const order = new Map<HTMLElement, number>();
+  candidates.forEach((candidate, index) => order.set(candidate, index));
+
+  return candidates
+    .filter((candidate) => !candidate.querySelector(CHATGPT_TURN_SHELL_SELECTOR))
+    .sort((left, right) => {
+      const leftIndex = getChatGptTurnShellSortIndex(left);
+      const rightIndex = getChatGptTurnShellSortIndex(right);
+      if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+      return (order.get(left) ?? 0) - (order.get(right) ?? 0);
+    });
+}
+
+function shellForElement(element: HTMLElement): HTMLElement | undefined {
+  return element.closest<HTMLElement>(CHATGPT_TURN_SHELL_SELECTOR) ?? undefined;
+}
+
+function isMountedMessageTarget(element: HTMLElement): boolean {
+  return Boolean(
+    element.matches('[data-message-author-role="user"], [data-message-id]') ||
+      element.querySelector('[data-message-author-role="user"], [data-message-id]')
+  );
+}
+
+function turnShellEntries(doc: Document = document): NativeUserEntry[] {
+  return getAllChatGptTurnShellsSorted(doc)
+    .map((shell, index) => {
+      const userRoot = shell.querySelector<HTMLElement>('[data-message-author-role="user"]');
+      const text = userRoot ? readElementText(userRoot) : "";
+      return {
+        index,
+        text,
+        element: userRoot ?? undefined,
+        shell,
+        messageId: userRoot ? getMessageId(userRoot) : undefined,
+        turnId: getTurnId(shell)
+      };
+    })
+    .filter((entry) => entry.text || entry.turnId);
+}
+
 function visibleUserEntries(doc: Document = document): NativeUserEntry[] {
   const seen = new Set<HTMLElement>();
   return Array.from(doc.querySelectorAll<HTMLElement>('[data-message-author-role="user"]'))
@@ -306,7 +437,8 @@ function visibleUserEntries(doc: Document = document): NativeUserEntry[] {
       text: readElementText(element),
       element,
       messageId: getMessageId(element),
-      turnId: getTurnId(element)
+      turnId: getTurnId(element),
+      shell: shellForElement(element)
     }))
     .filter((entry) => entry.text);
 }
@@ -384,9 +516,18 @@ function nativeTocEntries(doc: Document = document): NativeUserEntry[] {
 export function extractChatGptOphelNavigationTurns(doc: Document = document): Turn[] {
   const nativeEntries = nativeTocEntries(doc).filter((entry) => entry.text);
   if (nativeEntries.length > 0) {
+    nativeEntries.forEach(rememberChatGptOphelTarget);
     return turnsFromOphelNavigationSeeds(nativeEntries);
   }
-  return turnsFromOphelNavigationSeeds(visibleUserEntries(doc));
+  const shellEntries = turnShellEntries(doc).filter((entry) => entry.text);
+  if (shellEntries.length > 0) {
+    shellEntries.forEach(rememberChatGptOphelTarget);
+    return turnsFromOphelNavigationSeeds(shellEntries);
+  }
+
+  const visibleEntries = visibleUserEntries(doc);
+  visibleEntries.forEach(rememberChatGptOphelTarget);
+  return turnsFromOphelNavigationSeeds(visibleEntries);
 }
 
 function targetFromMessageId(messageId: string): HTMLElement | null {
@@ -404,6 +545,7 @@ function targetFromTurnId(turnId: string): HTMLElement | null {
 
 function targetFromVisibleEntries(navigation: TurnNavigation): HTMLElement | null {
   const entries = visibleUserEntries();
+  entries.forEach(rememberChatGptOphelTarget);
   return entries.find((entry) => visibleEntryMatchesNavigation(entry, navigation))?.element ?? null;
 }
 
@@ -411,15 +553,67 @@ function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-async function waitForTarget(navigation: TurnNavigation, timeoutMs: number): Promise<HTMLElement | null> {
+function cachedTargetMatchesNavigation(entry: RuntimeCacheEntry, navigation: TurnNavigation): boolean {
+  if (entry.navigationId === navigation.navigationId) return true;
+  if (navigation.messageId && entry.messageId === navigation.messageId) return true;
+  if (navigation.turnId && entry.turnId === navigation.turnId) return true;
+  const targetIndex = navigation.nativeTocIndex ?? navigation.turnIndex;
+  if (typeof targetIndex !== "number" || entry.nativeTocIndex !== targetIndex) return false;
+  if (navigation.textHash && entry.textHash === navigation.textHash) return true;
+  return Boolean(navigation.userPreview && entry.userPreview.includes(normalizeText(navigation.userPreview)));
+}
+
+function cachedEntryForNavigation(navigation: TurnNavigation): RuntimeCacheEntry | undefined {
+  return (
+    runtimeNavigationCache.get(navigation.navigationId) ??
+    Array.from(runtimeNavigationCache.values()).find((entry) => cachedTargetMatchesNavigation(entry, navigation))
+  );
+}
+
+function liveCachedTarget(entry: RuntimeCacheEntry): HTMLElement | null {
+  if (entry.element?.isConnected && isMountedMessageTarget(entry.element)) return entry.element;
+  if (entry.messageId) {
+    const byMessage = targetFromMessageId(entry.messageId);
+    if (byMessage) return byMessage;
+  }
+  if (entry.shell?.isConnected && isMountedMessageTarget(entry.shell)) {
+    return entry.shell.querySelector<HTMLElement>('[data-message-author-role="user"]') ?? entry.shell;
+  }
+  if (entry.turnId) {
+    const byTurn = targetFromTurnId(entry.turnId);
+    if (byTurn && isMountedMessageTarget(byTurn)) {
+      return byTurn.querySelector<HTMLElement>('[data-message-author-role="user"]') ?? byTurn;
+    }
+  }
+  return null;
+}
+
+function shellFromCachedEntry(entry: RuntimeCacheEntry): HTMLElement | null {
+  if (entry.shell?.isConnected) return entry.shell;
+  if (!entry.turnId) return null;
+  return targetFromTurnId(entry.turnId);
+}
+
+function scrollIntoViewForRevive(shell: HTMLElement): void {
+  shell.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+}
+
+async function waitForCachedChatGPTTargetRemount(
+  navigation: TurnNavigation,
+  timeoutMs: number
+): Promise<HTMLElement | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    const cached = cachedEntryForNavigation(navigation);
+    const cachedTarget = cached ? liveCachedTarget(cached) : null;
+    if (cachedTarget) return cachedTarget;
+
     const target =
       (navigation.messageId ? targetFromMessageId(navigation.messageId) : null) ??
       (navigation.turnId ? targetFromTurnId(navigation.turnId) : null) ??
       targetFromVisibleEntries(navigation);
-    if (target) return target;
-    await sleep(80);
+    if (target && isMountedMessageTarget(target)) return target;
+    await sleep(CACHE_WAIT_STEP_MS);
   }
   return null;
 }
@@ -428,24 +622,49 @@ export async function resolveChatGptOphelTarget(
   navigation: TurnNavigation,
   timeoutMs = 1400
 ): Promise<OphelNavigationResolveResult> {
+  const entries = nativeTocEntries();
+  entries.forEach(rememberChatGptOphelTarget);
+
+  const targetIndex = navigation.nativeTocIndex ?? navigation.turnIndex;
+  const nativeEntry =
+    entries.find((candidate) => cachedTargetMatchesNavigation(rememberedEntry(candidate), navigation)) ??
+    (typeof targetIndex === "number" && !navigation.textHash && !navigation.userPreview
+      ? entries.find((candidate) => candidate.index === targetIndex)
+      : undefined);
+  if (nativeEntry?.button) {
+    nativeEntry.button.click();
+    const mounted = await waitForCachedChatGPTTargetRemount(navigation, timeoutMs);
+    if (mounted) return { ok: true, source: "native-toc", element: mounted };
+  }
+
+  const cached = cachedEntryForNavigation(navigation);
+  const cachedTarget = cached ? liveCachedTarget(cached) : null;
+  if (cachedTarget) return { ok: true, source: "visible-user", element: cachedTarget };
+
+  const shell = cached ? shellFromCachedEntry(cached) : null;
+  if (shell) {
+    scrollIntoViewForRevive(shell);
+    const revived = await waitForCachedChatGPTTargetRemount(navigation, Math.min(timeoutMs, 900));
+    return { ok: true, source: "turn-shell", element: revived ?? shell };
+  }
+
   if (navigation.messageId) {
     const byMessage = targetFromMessageId(navigation.messageId);
     if (byMessage) return { ok: true, source: "message-id", element: byMessage };
   }
 
   if (navigation.turnId) {
-    const shell = targetFromTurnId(navigation.turnId);
-    if (shell) {
-      shell.scrollIntoView({ block: "center", inline: "nearest" });
-      const revived = await waitForTarget(navigation, Math.min(timeoutMs, 700));
-      return { ok: true, source: "turn-shell", element: revived ?? shell };
+    const turnShell = targetFromTurnId(navigation.turnId);
+    if (turnShell) {
+      scrollIntoViewForRevive(turnShell);
+      const revived = await waitForCachedChatGPTTargetRemount(navigation, Math.min(timeoutMs, 900));
+      return { ok: true, source: "turn-shell", element: revived ?? turnShell };
     }
   }
 
   const visible = targetFromVisibleEntries(navigation);
   if (visible) return { ok: true, source: "visible-user", element: visible };
 
-  const entries = nativeTocEntries();
   if (entries.length === 0) {
     return {
       ok: false,
@@ -454,9 +673,7 @@ export async function resolveChatGptOphelTarget(
     };
   }
 
-  const targetIndex = navigation.nativeTocIndex ?? navigation.turnIndex;
-  const entry = typeof targetIndex === "number" ? entries.find((candidate) => candidate.index === targetIndex) : undefined;
-  if (!entry?.button) {
+  if (!nativeEntry?.button) {
     return {
       ok: false,
       reason: "native-toc-entry-missing",
@@ -464,15 +681,14 @@ export async function resolveChatGptOphelTarget(
     };
   }
 
-  entry.button.click();
-  const mounted = await waitForTarget(navigation, timeoutMs);
-  if (!mounted) {
-    return {
-      ok: false,
-      reason: "native-target-timeout",
-      detail: "ChatGPT native prompt navigation did not mount the requested turn in time."
-    };
-  }
+  return {
+    ok: false,
+    reason: "native-target-timeout",
+    detail: "ChatGPT native prompt navigation did not mount the requested turn in time."
+  };
+}
 
-  return { ok: true, source: "native-toc", element: mounted };
+function rememberedEntry(entry: NativeUserEntry): RuntimeCacheEntry {
+  const navigation = rememberChatGptOphelTarget(entry);
+  return runtimeNavigationCache.get(navigation.navigationId)!;
 }
