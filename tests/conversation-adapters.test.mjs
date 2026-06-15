@@ -1138,9 +1138,19 @@ test("floating panel uses right-click jump and follows saved theme", () => {
 
   assert.match(renderBody, /addEventListener\("click", \(event\) => \{\s*event\.preventDefault\(\);\s*button\.focus\(\);/s);
   assert.match(renderBody, /addEventListener\("contextmenu", \(event\) => \{/);
-  assert.match(renderBody, /performJumpToTurn\(\{ type: "TURNMAP_JUMP_TO_TURN", anchor: turn\.sourceAnchor \}\)/);
+  assert.match(renderBody, /performJumpToTurn\(\{ type: "TURNMAP_JUMP_TO_TURN", navigation: turn\.navigation, anchor: turn\.sourceAnchor \}\)/);
   assert.doesNotMatch(renderBody, /getCurrentAdapter\(\)\?\.jumpToTurn/);
   assert.match(messageBody, /performJumpToTurn\(message as JumpToTurnMessage\)/);
+});
+
+test("graph node jumps prefer ophel_notSourceAnchor navigation over SourceAnchor", () => {
+  const canvasSource = readFileSync(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
+  const jumpStart = canvasSource.indexOf('type: "TURNMAP_JUMP_TO_TURN"');
+  const jumpBody = canvasSource.slice(jumpStart, jumpStart + 220);
+
+  assert.match(jumpBody, /navigation:\s*turn\.navigation/);
+  assert.match(jumpBody, /anchor:\s*turn\.sourceAnchor/);
+  assert.ok(jumpBody.indexOf("navigation: turn.navigation") < jumpBody.indexOf("anchor: turn.sourceAnchor"));
 });
 
 test("blocksToTurns pairs ordinary web AI user and assistant blocks", () => {

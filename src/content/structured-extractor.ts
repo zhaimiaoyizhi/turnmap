@@ -1,6 +1,7 @@
 import { hashText } from "../shared/hash";
 import { stableTurnIdAssigner } from "../shared/turn-id.ts";
 import type { SourceAnchor, Turn } from "../shared/types";
+import { createChatGptTurnNavigation } from "./chatgpt-ophel-navigation";
 import { normalizeTurnIndexes } from "./turn-extractor";
 
 type ChatGptRole = "user" | "assistant" | "system" | "tool";
@@ -331,6 +332,11 @@ function turnsFromMessages(messages: FlatMessage[]): Turn[] {
       userText: user.text,
       assistantText,
       sourceAnchor,
+      navigation: createChatGptTurnNavigation({
+        index: turnIndex,
+        text: user.text,
+        messageId: user.id
+      }),
       extractedAt: Date.now()
     });
   };

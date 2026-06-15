@@ -123,7 +123,7 @@ function performJumpToTurn(message: JumpToTurnMessage): Promise<unknown> {
     return Promise.resolve({ ok: false, reason: "This AI conversation site is not supported yet." });
   }
 
-  return adapter.jumpToTurn(message.anchor);
+  return adapter.jumpToTurn({ navigation: message.navigation, anchor: message.anchor });
 }
 
 function previewText(text: string): string {
@@ -179,7 +179,7 @@ function renderFloatingPanel(): void {
     button.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void performJumpToTurn({ type: "TURNMAP_JUMP_TO_TURN", anchor: turn.sourceAnchor });
+      void performJumpToTurn({ type: "TURNMAP_JUMP_TO_TURN", navigation: turn.navigation, anchor: turn.sourceAnchor });
     });
     list.append(button);
   });

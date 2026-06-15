@@ -1,5 +1,6 @@
 ﻿import type { ExtractedTurnsMessage, JumpToTurnResult, SourceAnchor, Turn } from "../shared/types";
 import { adapterSites, chatGptSite, isChatGptUrl, selectAdapter, siteMatchesUrl, type ConversationSite } from "./adapter-registry";
+import type { JumpToTurnMessage } from "../shared/types";
 import {
   describeWebScrollElement,
   extractTurnsFromDocument,
@@ -32,7 +33,7 @@ export type ConversationAdapter = {
   refreshLatestTurns(): Promise<Turn[]>;
   refreshCompleteTurns(): Promise<Turn[]>;
   harvestTurnsByScrolling(): Promise<Turn[]>;
-  jumpToTurn(anchor: SourceAnchor): Promise<JumpToTurnResult>;
+  jumpToTurn(target: Pick<JumpToTurnMessage, "navigation" | "anchor">): Promise<JumpToTurnResult>;
   startObserver(listener: TurnsListener): void;
   toTurnsMessage(turns: Turn[]): ExtractedTurnsMessage;
 };
@@ -1774,8 +1775,11 @@ function createWebAdapter(profile: WebConversationProfile): ConversationAdapter 
     refreshLatestTurns: refresh,
     refreshCompleteTurns: harvest,
     harvestTurnsByScrolling: harvest,
-    async jumpToTurn(anchor) {
-      return scrollToWebTurn(anchor, latestTurns, profile);
+    async jumpToTurn(target) {
+      if (!target.anchor) {
+        return { ok: false, reason: "This web turn has no legacy source anchor for jumping." };
+      }
+      return scrollToWebTurn(target.anchor, latestTurns, profile);
     },
     startObserver(listener) {
       if (observer) return;

@@ -2592,6 +2592,7 @@ export function TurnMapCanvas({
       const result = await jumpToTurnInActiveTab(
         {
           type: "TURNMAP_JUMP_TO_TURN",
+          navigation: turn.navigation,
           anchor: turn.sourceAnchor
         },
         sourceTabId

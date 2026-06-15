@@ -1,4 +1,9 @@
 ﻿import type { ExtractedTurnsMessage, Turn } from "../shared/types";
+import {
+  attachOphelNavigationToTurns,
+  extractChatGptOphelNavigationTurns,
+  mergeOphelNavigationTurns
+} from "./chatgpt-ophel-navigation";
 import { extractConversationApiTurns } from "./conversation-api-extractor";
 import { loadReadingBehaviorSettings } from "./reading-settings";
 import { describeScrollElement, getChatScrollElement } from "./scroll-container";
@@ -24,9 +29,13 @@ function isFullConversationSource(source: HarvestMeta["source"]): boolean {
   );
 }
 
+function shouldReplaceLatestTurns(source: HarvestMeta["source"]): boolean {
+  return isFullConversationSource(source) || source === "native-navigation";
+}
+
 function emitTurns(listener: TurnsListener): void {
   void getNonDisruptiveTurns().then((turns) => {
-    latestTurns = lastHarvestMeta && isFullConversationSource(lastHarvestMeta.source)
+    latestTurns = lastHarvestMeta && shouldReplaceLatestTurns(lastHarvestMeta.source)
       ? turns
       : mergeTurns(latestTurns, turns);
     listener(latestTurns);
@@ -58,20 +67,40 @@ function setSourceMeta(source: HarvestMeta["source"], turns: Turn[]): void {
   }
 }
 
+function applyOphelNavigationIndex(turns: Turn[]): { turns: Turn[]; source: HarvestMeta["source"] | null } {
+  const navigableTurns = attachOphelNavigationToTurns(turns);
+  const nativeTurns = extractChatGptOphelNavigationTurns();
+  if (nativeTurns.length === 0) return { turns: navigableTurns, source: null };
+
+  const merged = mergeOphelNavigationTurns(navigableTurns, nativeTurns);
+  return {
+    turns: merged,
+    source: turns.length === 0 || merged.length > turns.length ? "native-navigation" : null
+  };
+}
+
 async function getNonDisruptiveTurns(): Promise<Turn[]> {
   const conversationApiResult = await extractConversationApiTurns();
   if (conversationApiResult && conversationApiResult.turns.length > 0) {
-    setSourceMeta(conversationApiResult.source, conversationApiResult.turns);
-    return conversationApiResult.turns;
+    const navigated = applyOphelNavigationIndex(conversationApiResult.turns);
+    setSourceMeta(navigated.source ?? conversationApiResult.source, navigated.turns);
+    return navigated.turns;
   }
 
   const structuredResult = await extractStructuredTurns();
   if (structuredResult && structuredResult.turns.length > 0) {
-    setSourceMeta(structuredResult.source, structuredResult.turns);
-    return structuredResult.turns;
+    const navigated = applyOphelNavigationIndex(structuredResult.turns);
+    setSourceMeta(navigated.source ?? structuredResult.source, navigated.turns);
+    return navigated.turns;
   }
 
-  const domTurns = normalizeTurnIndexes(extractTurns());
+  const nativeOnly = applyOphelNavigationIndex([]);
+  if (nativeOnly.turns.length > 0) {
+    setSourceMeta("native-navigation", nativeOnly.turns);
+    return nativeOnly.turns;
+  }
+
+  const domTurns = attachOphelNavigationToTurns(normalizeTurnIndexes(extractTurns()));
   setSourceMeta("dom", domTurns);
   return domTurns;
 }
@@ -109,14 +138,14 @@ export async function harvestTurnsByScrolling(): Promise<Turn[]> {
 
 export function getLatestTurns(): Turn[] {
   if (latestTurns.length === 0) {
-    latestTurns = normalizeTurnIndexes(extractTurns());
+    latestTurns = attachOphelNavigationToTurns(normalizeTurnIndexes(extractTurns()));
   }
   return latestTurns;
 }
 
 export async function refreshLatestTurns(): Promise<Turn[]> {
   const turns = await getNonDisruptiveTurns();
-  latestTurns = lastHarvestMeta && isFullConversationSource(lastHarvestMeta.source)
+  latestTurns = lastHarvestMeta && shouldReplaceLatestTurns(lastHarvestMeta.source)
     ? turns
     : mergeTurns(latestTurns, turns);
   return latestTurns;
@@ -128,7 +157,7 @@ export async function refreshCompleteTurns(): Promise<Turn[]> {
     return turns;
   }
 
-  return harvestTurnsByScrolling();
+  return turns;
 }
 
 export function startChatGptObserver(listener: TurnsListener): void {

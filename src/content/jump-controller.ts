@@ -1,5 +1,7 @@
 ﻿import type { JumpToTurnResult, SourceAnchor } from "../shared/types";
 import { getLatestTurns } from "./chatgpt-observer";
+import { resolveChatGptOphelTarget } from "./chatgpt-ophel-navigation";
+import type { JumpToTurnMessage, TurnNavigation } from "../shared/types";
 import { loadReadingBehaviorSettings } from "./reading-settings.ts";
 import { getChatScrollElement } from "./scroll-container";
 import { findTurnElement, getVisibleTurnIndexRange } from "./turn-extractor";
@@ -40,6 +42,17 @@ function anchorKey(anchor: SourceAnchor): string {
     anchor.userHash,
     anchor.assistantHash,
     (anchor.userAttachmentNames ?? []).join("|")
+  ].join("::");
+}
+
+function navigationKey(navigation: TurnNavigation): string {
+  return [
+    navigation.kind,
+    navigation.site,
+    navigation.navigationId,
+    navigation.messageId ?? "",
+    navigation.turnId ?? "",
+    navigation.nativeTocIndex ?? ""
   ].join("::");
 }
 
@@ -178,10 +191,27 @@ async function searchInDirection(
   return null;
 }
 
-async function runJump(anchor: SourceAnchor, sequence: number): Promise<JumpToTurnResult> {
+async function runJump(target: Pick<JumpToTurnMessage, "navigation" | "anchor">, sequence: number): Promise<JumpToTurnResult> {
   ensureHighlightStyle();
 
-  const element = await findTurnElementWithLazyScroll(anchor, sequence);
+  if (target.navigation) {
+    const nativeTarget = await resolveChatGptOphelTarget(target.navigation);
+    if (!isCurrentJump(sequence)) {
+      return { ok: false, reason: "Jump cancelled by a newer node click." };
+    }
+    if (!nativeTarget.ok) {
+      return { ok: false, reason: nativeTarget.detail };
+    }
+
+    highlightElement(nativeTarget.element, sequence);
+    return { ok: true };
+  }
+
+  if (!target.anchor) {
+    return { ok: false, reason: "This turn has no ChatGPT navigation identity." };
+  }
+
+  const element = await findTurnElementWithLazyScroll(target.anchor, sequence);
   if (!isCurrentJump(sequence)) {
     return { ok: false, reason: "Jump cancelled by a newer node click." };
   }
@@ -194,12 +224,12 @@ async function runJump(anchor: SourceAnchor, sequence: number): Promise<JumpToTu
   return { ok: true };
 }
 
-export function jumpToTurn(anchor: SourceAnchor): Promise<JumpToTurnResult> {
-  const key = anchorKey(anchor);
+export function jumpToTurn(target: Pick<JumpToTurnMessage, "navigation" | "anchor">): Promise<JumpToTurnResult> {
+  const key = target.navigation ? navigationKey(target.navigation) : target.anchor ? anchorKey(target.anchor) : "missing";
   if (activeJump?.key === key) return activeJump.promise;
 
   const sequence = (jumpSequence += 1);
-  const promise = runJump(anchor, sequence).finally(() => {
+  const promise = runJump(target, sequence).finally(() => {
     if (activeJump?.key === key) activeJump = null;
   });
 

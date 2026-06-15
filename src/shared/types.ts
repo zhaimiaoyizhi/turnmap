@@ -9,12 +9,25 @@
   assistantPreview: string;
 };
 
+export type TurnNavigation = {
+  kind: "ophel_notSourceAnchor";
+  site: "chatgpt";
+  navigationId: string;
+  messageId?: string;
+  turnId?: string;
+  nativeTocIndex?: number;
+  turnIndex?: number;
+  textHash?: string;
+  userPreview?: string;
+};
+
 export type Turn = {
   id: string;
   turnIndex: number;
   userText: string;
   assistantText: string;
   sourceAnchor: SourceAnchor;
+  navigation?: TurnNavigation;
   extractedAt: number;
 };
 
@@ -36,7 +49,7 @@ export type ExtractedTurnsMessage = {
   site?: ConversationSite;
   harvestMeta?: {
     attempted: boolean;
-    source: "conversation-api" | "structured" | "web-storage" | "indexeddb" | "dom" | "deep-scan";
+    source: "conversation-api" | "structured" | "web-storage" | "indexeddb" | "native-navigation" | "dom" | "deep-scan";
     scrollContainer: string;
     scrollHeight: number;
     clientHeight: number;
@@ -60,7 +73,8 @@ export type RequestTurnsMessage = {
 
 export type JumpToTurnMessage = {
   type: "TURNMAP_JUMP_TO_TURN";
-  anchor: SourceAnchor;
+  navigation?: TurnNavigation;
+  anchor?: SourceAnchor;
 };
 
 export type SetFloatingPanelMessage = {
