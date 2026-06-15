@@ -1,6 +1,7 @@
 ﻿import type { ExtractedTurnsMessage, JumpToTurnMessage, Turn } from "../shared/types";
 import { selectConversationAdapter, type ConversationAdapter } from "./conversation-adapters";
 import { getTurnMapLauncherIconUrl, loadTurnMapLauncherIconSrc } from "./launcher-icon";
+import { mergeTurns } from "./turn-extractor";
 
 declare global {
   interface Window {
@@ -22,7 +23,7 @@ function isContentMessage(message: unknown): message is JumpToTurnMessage | { ty
 }
 
 function broadcastTurns(message: ExtractedTurnsMessage): void {
-  floatingTurns = message.turns;
+  floatingTurns = mergeFloatingTurns(floatingTurns, message.turns);
   renderFloatingPanel();
   chrome.runtime.sendMessage(message).catch(() => {
     // Side panel may be closed. The next explicit request will fetch current turns.
@@ -131,8 +132,22 @@ function previewText(text: string): string {
   return normalized.length > 72 ? `${normalized.slice(0, 72)}...` : normalized;
 }
 
+function mergeFloatingTurns(existingTurns: Turn[], incomingTurns: Turn[]): Turn[] {
+  if (incomingTurns.length === 0) return existingTurns;
+  if (existingTurns.length === 0) return incomingTurns;
+  if (incomingTurns.length >= existingTurns.length) return mergeTurns(existingTurns, incomingTurns);
+
+  const merged = mergeTurns(existingTurns, incomingTurns);
+  return merged.length >= existingTurns.length ? merged : existingTurns;
+}
+
 function renderFloatingPanel(): void {
   if (!floatingPanel) return;
+  const previousList = floatingPanel.querySelector<HTMLElement>(".turnmap-floating-list");
+  const previousScrollTop = previousList?.scrollTop ?? 0;
+  const previousWasNearBottom = previousList
+    ? previousList.scrollTop + previousList.clientHeight >= previousList.scrollHeight - 16
+    : false;
   floatingDragCleanup?.();
   floatingDragCleanup = null;
   floatingPanel.innerHTML = "";
@@ -191,6 +206,7 @@ function renderFloatingPanel(): void {
   }
 
   floatingPanel.append(list);
+  list.scrollTop = previousWasNearBottom ? list.scrollHeight : previousScrollTop;
 }
 
 function clampFloatingPosition(position: FloatingPosition): FloatingPosition {

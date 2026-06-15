@@ -1141,6 +1141,29 @@ test("floating panel uses right-click jump and follows saved theme", () => {
   assert.match(messageBody, /performJumpToTurn\(message as JumpToTurnMessage\)/);
 });
 
+test("floating panel keeps its own scroll position across turn refresh renders", () => {
+  const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
+  const renderStart = source.indexOf("function renderFloatingPanel");
+  const renderEnd = source.indexOf("function clampFloatingPosition", renderStart);
+  const renderBody = source.slice(renderStart, renderEnd);
+
+  assert.match(renderBody, /previousList/);
+  assert.match(renderBody, /previousScrollTop/);
+  assert.match(renderBody, /previousWasNearBottom/);
+  assert.match(renderBody, /list\.scrollTop\s*=\s*previousWasNearBottom\s*\?\s*list\.scrollHeight\s*:\s*previousScrollTop/);
+});
+
+test("floating panel merges partial observer updates instead of replacing the full list", () => {
+  const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
+  const broadcastStart = source.indexOf("function broadcastTurns");
+  const broadcastEnd = source.indexOf("const activeAdapter", broadcastStart);
+  const broadcastBody = source.slice(broadcastStart, broadcastEnd);
+
+  assert.match(source, /mergeTurns/);
+  assert.match(broadcastBody, /floatingTurns\s*=\s*mergeFloatingTurns\(floatingTurns,\s*message\.turns\)/);
+  assert.doesNotMatch(broadcastBody, /floatingTurns\s*=\s*message\.turns/);
+});
+
 test("graph node jumps prefer ophel_notSourceAnchor navigation over SourceAnchor", () => {
   const canvasSource = readFileSync(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
   const jumpStart = canvasSource.indexOf('type: "TURNMAP_JUMP_TO_TURN"');
