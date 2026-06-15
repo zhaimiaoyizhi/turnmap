@@ -5,9 +5,6 @@ import {
   mergeOphelNavigationTurns
 } from "./chatgpt-ophel-navigation";
 import { extractConversationApiTurns } from "./conversation-api-extractor";
-import { loadReadingBehaviorSettings } from "./reading-settings";
-import { describeScrollElement, getChatScrollElement } from "./scroll-container";
-import { smartHarvestByScrolling } from "./smart-scroll-harvest.ts";
 import { extractStructuredTurns } from "./structured-extractor";
 import { extractTurns, mergeTurns, normalizeTurnIndexes } from "./turn-extractor";
 
@@ -106,32 +103,14 @@ async function getNonDisruptiveTurns(): Promise<Turn[]> {
 }
 
 export async function harvestTurnsByScrolling(): Promise<Turn[]> {
-  const scrollElement = getChatScrollElement();
-  const originalTop = scrollElement.scrollTop;
-  const settings = await loadReadingBehaviorSettings();
-  const result = await (async () => {
-    try {
-      return await smartHarvestByScrolling({
-        scrollElement,
-        collectTurns: extractTurns,
-        mergeTurns,
-        normalizeTurns: normalizeTurnIndexes,
-        maxDownSteps: 90,
-        settings
-      });
-    } finally {
-      scrollElement.scrollTo({ top: originalTop, behavior: "instant" });
-    }
-  })();
-
-  latestTurns = result.turns;
+  latestTurns = await refreshLatestTurns();
   lastHarvestMeta = {
     attempted: true,
-    source: "deep-scan",
-    scrollContainer: describeScrollElement(scrollElement),
-    scrollHeight: scrollElement.scrollHeight,
-    clientHeight: scrollElement.clientHeight,
-    scannedSteps: result.scannedSteps
+    source: lastHarvestMeta?.source ?? "native-navigation",
+    scrollContainer: "none",
+    scrollHeight: 0,
+    clientHeight: 0,
+    scannedSteps: 0
   };
   return latestTurns;
 }

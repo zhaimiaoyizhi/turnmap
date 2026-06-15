@@ -72,6 +72,59 @@ test("ChatGPT native user index extends partial extraction by navigation identit
   assert.equal(merged[1].userText, "Prompt outside DOM");
 });
 
+test("ChatGPT native placeholders enrich complete API turns by order without replacing answers", async () => {
+  const { mergeOphelNavigationTurns, turnsFromOphelNavigationSeeds } = await loadNavigationModule();
+  const existing = [
+    turn("turn-0", 0, "Full API user 0", "Full API answer 0", {
+      kind: "ophel_notSourceAnchor",
+      site: "chatgpt",
+      navigationId: "chatgpt-message:api-user-0",
+      messageId: "api-user-0",
+      turnIndex: 0
+    }),
+    turn("turn-1", 1, "Full API user 1", "Full API answer 1", {
+      kind: "ophel_notSourceAnchor",
+      site: "chatgpt",
+      navigationId: "chatgpt-message:api-user-1",
+      messageId: "api-user-1",
+      turnIndex: 1
+    })
+  ];
+  const nativeTurns = turnsFromOphelNavigationSeeds([
+    { index: 0, text: "Native TOC user 0" },
+    { index: 1, text: "Native TOC user 1" }
+  ]);
+
+  const merged = mergeOphelNavigationTurns(existing, nativeTurns);
+
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].assistantText, "Full API answer 0");
+  assert.equal(merged[1].assistantText, "Full API answer 1");
+  assert.equal(merged[0].userText, "Full API user 0");
+  assert.equal(merged[1].userText, "Full API user 1");
+  assert.match(merged[0].navigation?.navigationId ?? "", /^chatgpt-native-user-query:0:/);
+  assert.match(merged[1].navigation?.navigationId ?? "", /^chatgpt-native-user-query:1:/);
+});
+
+test("ChatGPT visible entries do not match distant native TOC targets by local viewport index only", async () => {
+  const { visibleEntryMatchesNavigation } = await loadNavigationModule();
+
+  assert.equal(
+    visibleEntryMatchesNavigation(
+      { index: 0, text: "Currently visible prompt", messageId: undefined, turnId: undefined },
+      {
+        kind: "ophel_notSourceAnchor",
+        site: "chatgpt",
+        navigationId: "chatgpt-native-user-query:0:far-away",
+        nativeTocIndex: 0,
+        textHash: hashText("Far away prompt"),
+        userPreview: "Far away prompt"
+      }
+    ),
+    false
+  );
+});
+
 test("ChatGPT native TOC can recover hidden Prompt labels from sibling title text", async () => {
   const { resolveNativeTocText } = await loadNavigationModule();
 

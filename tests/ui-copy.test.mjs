@@ -344,8 +344,9 @@ test("reading and jumping settings are localized and wired to content scripts", 
   assert.doesNotMatch(smartScrollSource, /\.\.\/shared\/reading-settings/);
   assert.match(smartScrollSource, /settings\?\.scrollSpeedMultiplier/);
   assert.match(smartScrollSource, /settings\?\.edgeWaitSeconds/);
-  assert.match(jumpSource, /loadReadingBehaviorSettings/);
-  assert.match(jumpSource, /settings\.jumpSearchStrength/);
+  assert.doesNotMatch(jumpSource, /loadReadingBehaviorSettings/);
+  assert.doesNotMatch(jumpSource, /settings\.jumpSearchStrength/);
+  assert.match(jumpSource, /resolveChatGptOphelTarget/);
   assert.match(webAdapterSource, /loadReadingBehaviorSettings/);
   assert.match(debugReportSource, /Scroll speed multiplier/);
   assert.match(debugReportSource, /Edge wait time/);

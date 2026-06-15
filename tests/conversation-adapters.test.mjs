@@ -640,15 +640,13 @@ test("ChatGPT jump direction can use visible user-only markers before scroll-rat
   assert.match(lookup, /markerMatchesAnchor\(marker, anchor\)/);
 });
 
-test("jump lazy search uses bounded adaptive steps for short conversations", () => {
+test("legacy lazy jump search remains only in generic web adapters", () => {
   const chatGptJump = readFileSync(new URL("../src/content/jump-controller.ts", import.meta.url), "utf8");
   const webAdapter = readFileSync(new URL("../src/content/web-adapter-core.ts", import.meta.url), "utf8");
 
-  assert.match(chatGptJump, /function jumpSearchDelta/);
-  assert.match(chatGptJump, /function jumpSearchStepLimit/);
-  assert.match(chatGptJump, /await delay\(120\)/);
-  assert.doesNotMatch(chatGptJump, /clientHeight \* 0\.85, 650/);
-  assert.doesNotMatch(chatGptJump, /await delay\(260\)/);
+  assert.doesNotMatch(chatGptJump, /function jumpSearchDelta/);
+  assert.doesNotMatch(chatGptJump, /function jumpSearchStepLimit/);
+  assert.doesNotMatch(chatGptJump, /findTurnElementWithLazyScroll/);
 
   assert.match(webAdapter, /function webJumpSearchDelta/);
   assert.match(webAdapter, /function webJumpSearchStepLimit/);
@@ -1151,6 +1149,36 @@ test("graph node jumps prefer ophel_notSourceAnchor navigation over SourceAnchor
   assert.match(jumpBody, /navigation:\s*turn\.navigation/);
   assert.match(jumpBody, /anchor:\s*turn\.sourceAnchor/);
   assert.ok(jumpBody.indexOf("navigation: turn.navigation") < jumpBody.indexOf("anchor: turn.sourceAnchor"));
+});
+
+test("ChatGPT harvest path no longer uses virtual scroll for ophel_notSourceAnchor", () => {
+  const source = readFileSync(new URL("../src/content/chatgpt-observer.ts", import.meta.url), "utf8");
+  const harvestStart = source.indexOf("export async function harvestTurnsByScrolling");
+  const harvestEnd = source.indexOf("export function getLatestTurns", harvestStart);
+  const harvestBody = source.slice(harvestStart, harvestEnd);
+
+  assert.doesNotMatch(harvestBody, /smartHarvestByScrolling/);
+  assert.doesNotMatch(harvestBody, /scrollTo\(/);
+  assert.match(harvestBody, /refreshLatestTurns\(\)/);
+});
+
+test("ChatGPT navigation jump does not recenter after native target resolution", () => {
+  const source = readFileSync(new URL("../src/content/jump-controller.ts", import.meta.url), "utf8");
+
+  assert.match(source, /highlightElement\(nativeTarget\.element,\s*sequence,\s*false\)/);
+  assert.doesNotMatch(source, /findTurnElementWithLazyScroll/);
+});
+
+test("ChatGPT jump controller no longer contains the legacy lazy-scroll SourceAnchor path", () => {
+  const source = readFileSync(new URL("../src/content/jump-controller.ts", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /findTurnElementWithLazyScroll/);
+  assert.doesNotMatch(source, /searchInDirection/);
+  assert.doesNotMatch(source, /getSearchDirection/);
+  assert.doesNotMatch(source, /loadReadingBehaviorSettings/);
+  assert.doesNotMatch(source, /getVisibleTurnIndexRange/);
+  assert.doesNotMatch(source, /findTurnElement\(/);
+  assert.doesNotMatch(source, /anchorKey/);
 });
 
 test("blocksToTurns pairs ordinary web AI user and assistant blocks", () => {

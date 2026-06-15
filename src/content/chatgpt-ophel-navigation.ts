@@ -123,13 +123,52 @@ function navigationMatches(left?: TurnNavigation, right?: TurnNavigation): boole
   return false;
 }
 
-function enrichTurnByNavigation(existing: Turn, nativeTurn: Turn, turnIndex: number): Turn {
-  const userText = nativeTurn.userText.length >= existing.userText.length ? nativeTurn.userText : existing.userText;
+export function visibleEntryMatchesNavigation(
+  entry: Pick<NativeUserEntry, "index" | "text" | "messageId" | "turnId">,
+  navigation: TurnNavigation
+): boolean {
+  if (navigation.messageId && entry.messageId === navigation.messageId) return true;
+  if (navigation.turnId && entry.turnId === navigation.turnId) return true;
+
+  const index = navigation.nativeTocIndex ?? navigation.turnIndex;
+  if (typeof index !== "number" || entry.index !== index) return false;
+  if (navigation.textHash && hashText(normalizeText(entry.text)) === navigation.textHash) return true;
+  if (navigation.userPreview && normalizeText(entry.text).includes(normalizeText(navigation.userPreview))) return true;
+  return false;
+}
+
+function mergedNavigation(existing: Turn, nativeTurn: Turn, turnIndex: number): TurnNavigation | undefined {
+  if (!nativeTurn.navigation && !existing.navigation) return undefined;
+  if (!nativeTurn.navigation) {
+    return {
+      ...existing.navigation!,
+      turnIndex
+    };
+  }
+
+  return {
+    ...nativeTurn.navigation,
+    messageId: nativeTurn.navigation.messageId ?? existing.navigation?.messageId,
+    turnId: nativeTurn.navigation.turnId ?? existing.navigation?.turnId,
+    turnIndex
+  };
+}
+
+function enrichTurnByNavigation(
+  existing: Turn,
+  nativeTurn: Turn,
+  turnIndex: number,
+  options: { updateUserText: boolean }
+): Turn {
+  const userText =
+    options.updateUserText && nativeTurn.userText.length >= existing.userText.length
+      ? nativeTurn.userText
+      : existing.userText;
   return {
     ...existing,
     turnIndex,
     userText,
-    navigation: existing.navigation ?? nativeTurn.navigation,
+    navigation: mergedNavigation(existing, nativeTurn, turnIndex),
     sourceAnchor: {
       ...existing.sourceAnchor,
       turnIndex,
@@ -165,6 +204,12 @@ export function mergeOphelNavigationTurns(existingTurns: Turn[], nativeTurns: Tu
 
   const usedExisting = new Set<number>();
   const merged = nativeTurns.map((nativeTurn, index) => {
+    const sameIndex = existingTurns[index];
+    if (sameIndex && navigationMatches(sameIndex.navigation, nativeTurn.navigation)) {
+      usedExisting.add(index);
+      return enrichTurnByNavigation(sameIndex, nativeTurn, index, { updateUserText: true });
+    }
+
     const matchingIndex = existingTurns.findIndex(
       (candidate, candidateIndex) =>
         !usedExisting.has(candidateIndex) && navigationMatches(candidate.navigation, nativeTurn.navigation)
@@ -172,7 +217,12 @@ export function mergeOphelNavigationTurns(existingTurns: Turn[], nativeTurns: Tu
 
     if (matchingIndex >= 0) {
       usedExisting.add(matchingIndex);
-      return enrichTurnByNavigation(existingTurns[matchingIndex], nativeTurn, index);
+      return enrichTurnByNavigation(existingTurns[matchingIndex], nativeTurn, index, { updateUserText: true });
+    }
+
+    if (sameIndex) {
+      usedExisting.add(index);
+      return enrichTurnByNavigation(sameIndex, nativeTurn, index, { updateUserText: false });
     }
 
     return {
@@ -354,16 +404,7 @@ function targetFromTurnId(turnId: string): HTMLElement | null {
 
 function targetFromVisibleEntries(navigation: TurnNavigation): HTMLElement | null {
   const entries = visibleUserEntries();
-  if (navigation.messageId) {
-    const byMessage = entries.find((entry) => entry.messageId === navigation.messageId);
-    if (byMessage?.element) return byMessage.element;
-  }
-  const index = navigation.nativeTocIndex ?? navigation.turnIndex;
-  if (typeof index === "number") {
-    const byIndex = entries.find((entry) => entry.index === index);
-    if (byIndex?.element) return byIndex.element;
-  }
-  return null;
+  return entries.find((entry) => visibleEntryMatchesNavigation(entry, navigation))?.element ?? null;
 }
 
 function sleep(milliseconds: number): Promise<void> {
