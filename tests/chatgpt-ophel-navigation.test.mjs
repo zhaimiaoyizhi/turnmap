@@ -125,6 +125,39 @@ test("ChatGPT visible entries do not match distant native TOC targets by local v
   );
 });
 
+test("ChatGPT native TOC remount matching uses text after activation, not local viewport index", async () => {
+  const { nativeTocActivatedEntryMatchesNavigation } = await loadNavigationModule();
+
+  assert.equal(
+    nativeTocActivatedEntryMatchesNavigation(
+      { index: 0, text: "Far away prompt", messageId: undefined, turnId: undefined },
+      {
+        kind: "ophel_notSourceAnchor",
+        site: "chatgpt",
+        navigationId: "chatgpt-native-user-query:42:far-away",
+        nativeTocIndex: 42,
+        textHash: hashText("Far away prompt"),
+        userPreview: "Far away prompt"
+      }
+    ),
+    true
+  );
+  assert.equal(
+    nativeTocActivatedEntryMatchesNavigation(
+      { index: 0, text: "Different visible prompt", messageId: undefined, turnId: undefined },
+      {
+        kind: "ophel_notSourceAnchor",
+        site: "chatgpt",
+        navigationId: "chatgpt-native-user-query:42:far-away",
+        nativeTocIndex: 42,
+        textHash: hashText("Far away prompt"),
+        userPreview: "Far away prompt"
+      }
+    ),
+    false
+  );
+});
+
 test("ChatGPT native TOC can recover hidden Prompt labels from sibling title text", async () => {
   const { resolveNativeTocText } = await loadNavigationModule();
 

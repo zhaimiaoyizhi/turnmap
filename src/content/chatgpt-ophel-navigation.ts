@@ -137,6 +137,20 @@ export function visibleEntryMatchesNavigation(
   return false;
 }
 
+export function nativeTocActivatedEntryMatchesNavigation(
+  entry: Pick<NativeUserEntry, "index" | "text" | "messageId" | "turnId">,
+  navigation: TurnNavigation
+): boolean {
+  if (navigation.messageId && entry.messageId === navigation.messageId) return true;
+  if (navigation.turnId && entry.turnId === navigation.turnId) return true;
+
+  const entryText = normalizeText(entry.text);
+  if (!entryText) return false;
+  if (navigation.textHash && hashText(entryText) === navigation.textHash) return true;
+  if (navigation.userPreview && entryText.includes(normalizeText(navigation.userPreview))) return true;
+  return false;
+}
+
 function mergedNavigation(existing: Turn, nativeTurn: Turn, turnIndex: number): TurnNavigation | undefined {
   if (!nativeTurn.navigation && !existing.navigation) return undefined;
   if (!nativeTurn.navigation) {
@@ -402,22 +416,23 @@ function targetFromTurnId(turnId: string): HTMLElement | null {
   );
 }
 
-function targetFromVisibleEntries(navigation: TurnNavigation): HTMLElement | null {
+function targetFromVisibleEntries(navigation: TurnNavigation, activatedNativeToc = false): HTMLElement | null {
   const entries = visibleUserEntries();
-  return entries.find((entry) => visibleEntryMatchesNavigation(entry, navigation))?.element ?? null;
+  const matches = activatedNativeToc ? nativeTocActivatedEntryMatchesNavigation : visibleEntryMatchesNavigation;
+  return entries.find((entry) => matches(entry, navigation))?.element ?? null;
 }
 
 function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-async function waitForTarget(navigation: TurnNavigation, timeoutMs: number): Promise<HTMLElement | null> {
+async function waitForTarget(navigation: TurnNavigation, timeoutMs: number, activatedNativeToc = false): Promise<HTMLElement | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const target =
       (navigation.messageId ? targetFromMessageId(navigation.messageId) : null) ??
       (navigation.turnId ? targetFromTurnId(navigation.turnId) : null) ??
-      targetFromVisibleEntries(navigation);
+      targetFromVisibleEntries(navigation, activatedNativeToc);
     if (target) return target;
     await sleep(80);
   }
@@ -465,7 +480,7 @@ export async function resolveChatGptOphelTarget(
   }
 
   entry.button.click();
-  const mounted = await waitForTarget(navigation, timeoutMs);
+  const mounted = await waitForTarget(navigation, timeoutMs, true);
   if (!mounted) {
     return {
       ok: false,

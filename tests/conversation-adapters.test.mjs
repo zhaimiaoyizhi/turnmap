@@ -1119,6 +1119,18 @@ test("root node context menu is swallowed before jump eligibility checks", () =>
   assert.ok(handler.indexOf("event.stopPropagation()") < handler.indexOf("!nodeData.turn"));
 });
 
+test("turn nodes handle right-click jumping from the whole card without stealing editor menus", () => {
+  const source = readFileSync(new URL("../src/side-panel/graph/TurnNode.tsx", import.meta.url), "utf8");
+  const articleStart = source.indexOf("<article");
+  const articleEnd = source.indexOf(">", articleStart);
+  const articleOpen = source.slice(articleStart, articleEnd);
+
+  assert.match(source, /function shouldIgnoreNodeJumpContextMenu/);
+  assert.match(source, /closest\("button, textarea, input, select, a, \[contenteditable='true'\]/);
+  assert.match(source, /\.turn-node__mini-map/);
+  assert.match(articleOpen, /onContextMenu=\{jumpFromText\}/);
+});
+
 test("floating panel uses right-click jump and follows saved theme", () => {
   const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
   const renderStart = source.indexOf("function renderFloatingPanel");
@@ -1185,10 +1197,14 @@ test("ChatGPT harvest path no longer uses virtual scroll for ophel_notSourceAnch
   assert.match(harvestBody, /refreshLatestTurns\(\)/);
 });
 
-test("ChatGPT navigation jump does not recenter after native target resolution", () => {
+test("ChatGPT navigation jump reveals the resolved target instead of only highlighting it", () => {
   const source = readFileSync(new URL("../src/content/jump-controller.ts", import.meta.url), "utf8");
 
-  assert.match(source, /highlightElement\(nativeTarget\.element,\s*sequence,\s*false\)/);
+  assert.match(source, /getChatScrollElement/);
+  assert.match(source, /function revealChatGptTarget/);
+  assert.match(source, /scrollElementToCenter/);
+  assert.match(source, /revealChatGptTarget\(nativeTarget\.element,\s*sequence\)/);
+  assert.doesNotMatch(source, /highlightElement\(nativeTarget\.element,\s*sequence,\s*false\)/);
   assert.doesNotMatch(source, /findTurnElementWithLazyScroll/);
 });
 

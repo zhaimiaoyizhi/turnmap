@@ -65,7 +65,14 @@ export function TurnNode({ id, data, selected }: NodeProps) {
   const stopEditorEvent = (event: { stopPropagation: () => void }) => {
     event.stopPropagation();
   };
+  function shouldIgnoreNodeJumpContextMenu(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(
+      target.closest("button, textarea, input, select, a, [contenteditable='true'], .turn-node__editor, .turn-node__mini-map, .react-flow__resize-control, .react-flow__handle")
+    );
+  }
   const jumpFromText = (event: MouseEvent) => {
+    if (shouldIgnoreNodeJumpContextMenu(event.target)) return;
     event.preventDefault();
     event.stopPropagation();
     if (!nodeData.turn || nodeData.isConversationRoot || nodeData.isCustomNode) return;
@@ -79,6 +86,7 @@ export function TurnNode({ id, data, selected }: NodeProps) {
       } ${nodeData.collapsed ? "is-collapsed" : ""} ${nodeData.important ? "is-important" : ""} ${
         nodeData.color ? "is-colored" : ""
       } ${nodeData.answerExpansion?.displayMode === "expanded" ? "is-expanded" : ""}`}
+      onContextMenu={jumpFromText}
       style={
         {
           "--node-accent": nodeData.color ? colorValue(nodeData.color) : undefined,

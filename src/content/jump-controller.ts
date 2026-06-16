@@ -1,5 +1,6 @@
 import type { JumpToTurnMessage, JumpToTurnResult, TurnNavigation } from "../shared/types";
 import { resolveChatGptOphelTarget } from "./chatgpt-ophel-navigation";
+import { getChatScrollElement } from "./scroll-container";
 
 const HIGHLIGHT_CLASS = "turnmap-source-highlight";
 
@@ -37,16 +38,60 @@ function navigationKey(navigation: TurnNavigation): string {
   ].join("::");
 }
 
-function highlightElement(element: HTMLElement, sequence: number, scroll = false): void {
+function highlightElement(element: HTMLElement, sequence: number): void {
   if (!isCurrentJump(sequence)) return;
-  if (scroll) {
-    element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
-  }
   element.classList.add(HIGHLIGHT_CLASS);
   window.setTimeout(() => {
     if (!isCurrentJump(sequence)) return;
     element.classList.remove(HIGHLIGHT_CLASS);
   }, 2200);
+}
+
+function isVisible(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function isScrollable(element: HTMLElement): boolean {
+  const style = window.getComputedStyle(element);
+  const overflowY = style.overflowY;
+  return (
+    (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+    element.scrollHeight > element.clientHeight + 1 &&
+    isVisible(element)
+  );
+}
+
+function getNearestScrollableAncestor(element: HTMLElement): HTMLElement | null {
+  for (let current = element.parentElement; current; current = current.parentElement) {
+    if (isScrollable(current)) return current;
+  }
+  return null;
+}
+
+function resolveRevealScrollElement(element: HTMLElement): HTMLElement {
+  const chatScrollElement = getChatScrollElement();
+  if (chatScrollElement.contains(element)) return chatScrollElement;
+  return getNearestScrollableAncestor(element) ?? ((document.scrollingElement ?? document.documentElement) as HTMLElement);
+}
+
+function scrollElementToCenter(element: HTMLElement, scrollElement: HTMLElement): void {
+  const elementRect = element.getBoundingClientRect();
+  const containerRect = scrollElement.getBoundingClientRect();
+  const containerTop =
+    scrollElement === document.documentElement || scrollElement === document.body ? 0 : containerRect.top;
+  const targetTop = scrollElement.scrollTop + elementRect.top - containerTop - scrollElement.clientHeight * 0.35;
+
+  scrollElement.scrollTo({
+    top: Math.max(0, targetTop),
+    behavior: "instant"
+  });
+}
+
+function revealChatGptTarget(element: HTMLElement, sequence: number): void {
+  if (!isCurrentJump(sequence)) return;
+  scrollElementToCenter(element, resolveRevealScrollElement(element));
+  highlightElement(element, sequence);
 }
 
 async function runJump(target: Pick<JumpToTurnMessage, "navigation">, sequence: number): Promise<JumpToTurnResult> {
@@ -67,7 +112,7 @@ async function runJump(target: Pick<JumpToTurnMessage, "navigation">, sequence: 
     return { ok: false, reason: nativeTarget.detail };
   }
 
-  highlightElement(nativeTarget.element, sequence, false);
+  revealChatGptTarget(nativeTarget.element, sequence);
   return { ok: true };
 }
 
