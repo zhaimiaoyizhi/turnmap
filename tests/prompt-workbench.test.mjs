@@ -233,6 +233,24 @@ test("ChatGPT prompt workbench adapter follows the my-prompt style boundary stra
   assert.doesNotMatch(source, /send-button|composer-submit-button|autoExecute/);
 });
 
+test("ChatGPT prompt workbench can anchor to the current compact plus button", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/chatgpt-adapter.ts", import.meta.url), "utf8");
+
+  assert.match(source, /findFallbackComposerButton/);
+  assert.match(source, /isRejectedComposerButton/);
+  assert.match(source, /text\.trim\(\) === "\+"/);
+  assert.match(source, /add|attach|upload|file|添加|上传|附件/i);
+  assert.match(source, /send|submit|voice|microphone|dictation|model/i);
+});
+
+test("prompt workbench keeps watching when the ChatGPT composer mounts after document idle", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/index.ts", import.meta.url), "utf8");
+
+  assert.match(source, /ensurePromptWorkbenchObserver/);
+  assert.match(source, /observer = adapter\.createObserver\(scheduleInitialize\)/);
+  assert.match(source, /ensurePromptWorkbenchObserver\(\);\s+const mountPoint = adapter\.findMountPoint\(\);/);
+});
+
 test("prompt workbench is wired into content and settings surfaces with i18n", () => {
   const contentSource = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
   const settingsSource = readFileSync(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");

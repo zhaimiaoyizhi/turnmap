@@ -21,6 +21,9 @@ export type PromptWriteRequest = {
   mode: Exclude<PromptApplyMode, "smart">;
 };
 
+const ACCEPTED_COMPOSER_BUTTON_PATTERN = /add|attach|upload|file|plus|添加|上传|附件/i;
+const REJECTED_COMPOSER_BUTTON_PATTERN = /send|submit|voice|microphone|dictation|model|tools?|deep research|canvas|发送|提交|语音|麦克风|模型|工具|画布/i;
+
 export class ChatGPTPromptWorkbenchAdapter {
   readonly site = "chatgpt";
 
@@ -47,9 +50,9 @@ export class ChatGPTPromptWorkbenchAdapter {
   findMountPoint(root: ParentNode = document): PromptMountPoint | null {
     const anchor =
       root.querySelector<HTMLElement>("#composer-plus-btn") ??
-      root.querySelector<HTMLElement>('[data-testid="composer-plus-btn"]');
+      root.querySelector<HTMLElement>('[data-testid="composer-plus-btn"]') ??
+      this.findFallbackComposerButton(root);
     if (!anchor || !anchor.isConnected) return null;
-    if (!anchor.querySelector("svg") && !anchor.getAttribute("aria-label")) return null;
     const container = anchor.parentElement;
     if (!container) return null;
     return { container, reference: anchor };
@@ -171,6 +174,45 @@ export class ChatGPTPromptWorkbenchAdapter {
     target.element.textContent = text;
     dispatchInput(target.element, text);
   }
+
+  private findFallbackComposerButton(root: ParentNode): HTMLElement | null {
+    const editor = this.findEditor(root);
+    if (!editor) return null;
+    const composer =
+      editor.element.closest("form") ??
+      editor.element.closest("[data-testid*='composer']") ??
+      editor.element.closest("[class*='composer' i]");
+    if (!composer) return null;
+
+    const buttons = Array.from(composer.querySelectorAll<HTMLElement>("button, [role='button']"));
+    return (
+      buttons.find((button) => {
+        if (!button.isConnected || button.dataset.testid === "turnmap-prompt-workbench-launcher") return false;
+        if (button.closest("[data-testid='turnmap-prompt-workbench-launcher']")) return false;
+        if (isRejectedComposerButton(button)) return false;
+        const text = buttonText(button);
+        if (text.trim() === "+") return true;
+        return ACCEPTED_COMPOSER_BUTTON_PATTERN.test(text);
+      }) ?? null
+    );
+  }
+}
+
+function buttonText(button: HTMLElement): string {
+  return [
+    button.id,
+    button.dataset.testid,
+    button.getAttribute("aria-label"),
+    button.getAttribute("title"),
+    button.textContent ?? ""
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+}
+
+function isRejectedComposerButton(button: HTMLElement): boolean {
+  const text = buttonText(button);
+  return REJECTED_COMPOSER_BUTTON_PATTERN.test(text);
 }
 
 function nextTextareaValue(value: string, request: PromptWriteRequest, selectionStart: number, selectionEnd: number): string {

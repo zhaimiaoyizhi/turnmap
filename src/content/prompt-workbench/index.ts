@@ -577,18 +577,21 @@ function scheduleInitialize(): void {
   }, 300);
 }
 
+function ensurePromptWorkbenchObserver(): void {
+  if (!observer) observer = adapter.createObserver(scheduleInitialize);
+}
+
 async function initializePromptWorkbench(): Promise<void> {
   if (!adapter.matches()) return;
   const library = await loadLibrary();
   libraryCache = library;
   if (!library.settings.enabled) return;
+  ensurePromptWorkbenchObserver();
   const mountPoint = adapter.findMountPoint();
   const editor = adapter.findEditor();
   if (!mountPoint || !editor) return;
   ensureStyle();
   adapter.mountLauncher(mountPoint, ensureLauncher());
-  observer?.disconnect();
-  observer = adapter.createObserver(scheduleInitialize);
 }
 
 export function startPromptWorkbench(): void {
