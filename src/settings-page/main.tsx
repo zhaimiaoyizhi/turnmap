@@ -1,6 +1,7 @@
 import { StrictMode, useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { AiSettingsForm } from "../side-panel/settings/AiSettingsForm";
+import { PromptWorkbenchSettingsPanel } from "./PromptWorkbenchSettingsPanel";
 import {
   applyNodeColorRendering,
   loadUiSettings,
@@ -333,6 +334,7 @@ function SettingsPage() {
 
       <section className="settings-page__grid">
         <AiSettingsForm onSaved={setStatus} />
+        <PromptWorkbenchSettingsPanel onStatus={setStatus} />
 
         <section className="settings-section">
           <div className="settings-section__header">

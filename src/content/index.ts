@@ -1,6 +1,7 @@
 ﻿import type { ExtractedTurnsMessage, JumpToTurnMessage, Turn } from "../shared/types";
 import { selectConversationAdapter, type ConversationAdapter } from "./conversation-adapters";
 import { getTurnMapLauncherIconUrl, loadTurnMapLauncherIconSrc } from "./launcher-icon";
+import { startPromptWorkbench } from "./prompt-workbench";
 import { mergeTurns } from "./turn-extractor";
 
 declare global {
@@ -658,6 +659,7 @@ function syncLauncherFromStorage(): void {
 
 function startTurnMapContentUi(): void {
   syncLauncherFromStorage();
+  startPromptWorkbench();
 
   void chrome.storage.local.get(floatingPanelEnabledKey()).then((result) => {
     if (result[floatingPanelEnabledKey()]) {
