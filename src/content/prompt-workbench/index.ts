@@ -19,18 +19,50 @@ import {
   type PromptEditorTarget,
   type PromptInputState
 } from "./chatgpt-adapter";
+import { getTurnMapLauncherIconUrl, loadTurnMapLauncherIconSrc } from "../launcher-icon";
+import {
+  CUSTOM_LANGUAGES_STORAGE_KEY,
+  LANGUAGE_STORAGE_KEY,
+  formatTranslation,
+  loadLanguageSettings,
+  translationsFor,
+  type I18nKey,
+  type TranslationMap
+} from "../../side-panel/i18n/i18n-storage";
 
 type WorkbenchView = "actions" | "library" | "variables" | "optimize" | "apply";
 
 const adapter = new ChatGPTPromptWorkbenchAdapter();
-const labels = {
-  launcher: "Prompt Workbench",
-  library: "Prompt library",
-  optimize: "Optimize prompt",
-  variables: "Variables",
-  manage: "Manage prompts",
-  selectedText: "Selected text"
-};
+const PROMPT_WORKBENCH_CONTENT_I18N_KEYS = {
+  launcher: "promptWorkbench.aria.launcher",
+  library: "promptWorkbench.content.library",
+  optimize: "promptWorkbench.content.optimize",
+  variables: "promptWorkbench.content.variables",
+  manage: "promptWorkbench.content.manage",
+  selectedText: "promptWorkbench.content.selectedText",
+  searchPrompts: "promptWorkbench.content.searchPrompts",
+  searchHint: "promptWorkbench.content.searchHint",
+  apply: "promptWorkbench.content.apply",
+  insert: "promptWorkbench.content.insert",
+  append: "promptWorkbench.content.append",
+  replace: "promptWorkbench.content.replace",
+  chooseApply: "promptWorkbench.content.chooseApply",
+  selectVariables: "promptWorkbench.content.selectVariables",
+  missing: "promptWorkbench.content.missing",
+  inputMissing: "promptWorkbench.content.inputMissing",
+  writeSomething: "promptWorkbench.content.writeSomething",
+  optimizing: "promptWorkbench.content.optimizing",
+  optimizedPrompt: "promptWorkbench.content.optimizedPrompt",
+  strictPlanningSuggestions: "promptWorkbench.content.strictPlanningSuggestions",
+  optimizationFailed: "promptWorkbench.content.optimizationFailed",
+  errorDetails: "promptWorkbench.content.errorDetails",
+  openAiSettings: "promptWorkbench.content.openAiSettings",
+  copy: "promptWorkbench.content.copy"
+} satisfies Record<string, I18nKey>;
+
+type PromptWorkbenchContentLabel = keyof typeof PROMPT_WORKBENCH_CONTENT_I18N_KEYS;
+
+let promptWorkbenchTranslations: TranslationMap = translationsFor("en", []);
 
 let launcher: HTMLButtonElement | null = null;
 let toolbar: HTMLDivElement | null = null;
@@ -41,6 +73,8 @@ let activePrompt: PromptItem | null = null;
 let activeVariables: PromptTemplateVariable[] = [];
 let pendingRenderedPrompt = "";
 let initializationScheduled = false;
+let i18nSyncStarted = false;
+let toolbarCloseTimer: number | null = null;
 
 function icon(name: "library" | "sparkles" | "braces" | "settings" | "launcher" | "copy" | "insert" | "replace"): string {
   const icons = {
@@ -59,6 +93,45 @@ function icon(name: "library" | "sparkles" | "braces" | "settings" | "launcher" 
   return icons[name];
 }
 
+function label(key: PromptWorkbenchContentLabel, values?: Record<string, string | number>): string {
+  const i18nKey = PROMPT_WORKBENCH_CONTENT_I18N_KEYS[key];
+  return formatTranslation(promptWorkbenchTranslations[i18nKey] ?? translationsFor("en", [])[i18nKey] ?? key, values);
+}
+
+function updateLauncherLabel(): void {
+  if (!launcher) return;
+  launcher.setAttribute("aria-label", label("launcher"));
+}
+
+function updateToolbarLabels(): void {
+  toolbar?.querySelectorAll<HTMLButtonElement>("[data-label-key]").forEach((element) => {
+    const key = element.dataset.labelKey as PromptWorkbenchContentLabel | undefined;
+    if (!key || !(key in PROMPT_WORKBENCH_CONTENT_I18N_KEYS)) return;
+    const nextLabel = label(key);
+    element.setAttribute("aria-label", nextLabel);
+    const labelElement = element.querySelector<HTMLElement>(".turnmap-prompt-workbench-toolbar-label");
+    if (labelElement) labelElement.textContent = nextLabel;
+  });
+}
+
+async function refreshPromptWorkbenchTranslations(): Promise<void> {
+  const settings = await loadLanguageSettings();
+  promptWorkbenchTranslations = translationsFor(settings.mode, settings.customLanguages);
+  updateLauncherLabel();
+  updateToolbarLabels();
+}
+
+function startPromptWorkbenchI18nSync(): void {
+  if (i18nSyncStarted) return;
+  i18nSyncStarted = true;
+  void refreshPromptWorkbenchTranslations();
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+    if (!(LANGUAGE_STORAGE_KEY in changes) && !(CUSTOM_LANGUAGES_STORAGE_KEY in changes)) return;
+    void refreshPromptWorkbenchTranslations();
+  });
+}
+
 function ensureStyle(): void {
   if (document.getElementById("turnmap-prompt-workbench-style")) return;
   const style = document.createElement("style");
@@ -67,22 +140,42 @@ function ensureStyle(): void {
     .turnmap-prompt-workbench-button,
     .turnmap-prompt-workbench-toolbar button,
     .turnmap-prompt-panel button {
+      --turnmap-prompt-control-size: 36px;
       box-sizing: border-box;
       color: inherit;
       font: 500 12px Inter, ui-sans-serif, system-ui, sans-serif;
     }
     .turnmap-prompt-workbench-button {
       align-items: center;
-      background: transparent;
-      border: 1px solid rgba(125, 132, 150, 0.45);
+      background: #fff;
+      border: 0;
       border-radius: 999px;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.72), 0 1px 5px rgba(0, 0, 0, 0.18);
+      color: #202123;
       cursor: pointer;
       display: inline-flex;
-      height: 32px;
+      flex: 0 0 auto;
+      height: var(--turnmap-prompt-control-size);
       justify-content: center;
       margin-inline: 4px;
+      overflow: hidden;
       padding: 0;
-      width: 32px;
+      transition:
+        transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        box-shadow 150ms ease;
+      width: var(--turnmap-prompt-control-size);
+    }
+    .turnmap-prompt-workbench-button:hover,
+    .turnmap-prompt-workbench-button:focus-visible {
+      box-shadow: 0 0 0 2px rgba(109, 93, 252, 0.36), 0 3px 10px rgba(0, 0, 0, 0.22);
+      transform: translateY(-1px);
+    }
+    .turnmap-prompt-workbench-icon {
+      border-radius: 999px;
+      display: block;
+      height: 100%;
+      object-fit: cover;
+      width: 100%;
     }
     .turnmap-prompt-workbench-button svg,
     .turnmap-prompt-workbench-toolbar svg,
@@ -97,31 +190,90 @@ function ensureStyle(): void {
     }
     .turnmap-prompt-workbench-toolbar {
       align-items: center;
-      background: color-mix(in srgb, Canvas 92%, #6d5dfc 8%);
-      border: 1px solid rgba(109, 93, 252, 0.45);
-      border-radius: 18px;
-      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+      background: transparent;
+      border: 0;
+      border-radius: 999px;
+      box-shadow: none;
       display: flex;
-      gap: 3px;
-      padding: 4px;
+      gap: 5px;
+      opacity: 0;
+      padding: 0;
+      pointer-events: auto;
       position: fixed;
+      transform: translateX(-8px) scale(0.96);
+      transform-origin: left center;
+      transition:
+        opacity 120ms ease,
+        transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
       z-index: 2147483600;
+    }
+    .turnmap-prompt-workbench-toolbar.is-open {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+    .turnmap-prompt-workbench-toolbar.is-closing {
+      opacity: 0;
+      transform: translateX(-6px) scale(0.98);
     }
     .turnmap-prompt-workbench-toolbar button {
       align-items: center;
-      background: transparent;
-      border: 0;
-      border-radius: 14px;
+      background: rgba(33, 33, 33, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      color: #f7f7f8;
       cursor: pointer;
       display: inline-flex;
-      height: 30px;
+      height: var(--turnmap-prompt-control-size);
       justify-content: center;
+      position: relative;
       padding: 0;
-      width: 30px;
+      transition:
+        background 120ms ease,
+        border-color 120ms ease,
+        transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      width: var(--turnmap-prompt-control-size);
     }
     .turnmap-prompt-workbench-toolbar button:hover,
-    .turnmap-prompt-workbench-button:hover {
-      background: rgba(109, 93, 252, 0.12);
+    .turnmap-prompt-workbench-toolbar button:focus-visible {
+      background: rgba(74, 74, 74, 0.98);
+      border-color: rgba(255, 255, 255, 0.24);
+      transform: translateY(-1px);
+    }
+    .turnmap-prompt-workbench-toolbar-label {
+      background: rgba(33, 33, 33, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+      color: #fff;
+      font: 500 12px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+      left: 50%;
+      opacity: 0;
+      padding: 6px 8px;
+      pointer-events: none;
+      position: absolute;
+      top: -36px;
+      transform: translate(-50%, 4px);
+      transition:
+        opacity 60ms ease,
+        transform 80ms ease;
+      white-space: nowrap;
+    }
+    .turnmap-prompt-workbench-toolbar-label::after {
+      background: rgba(33, 33, 33, 0.96);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      border-right: 1px solid rgba(255, 255, 255, 0.12);
+      bottom: -4px;
+      content: "";
+      height: 7px;
+      left: 50%;
+      position: absolute;
+      transform: translateX(-50%) rotate(45deg);
+      width: 7px;
+    }
+    .turnmap-prompt-workbench-toolbar button:hover .turnmap-prompt-workbench-toolbar-label,
+    .turnmap-prompt-workbench-toolbar button:focus-visible .turnmap-prompt-workbench-toolbar-label {
+      opacity: 1;
+      transform: translate(-50%, 0);
     }
     .turnmap-prompt-panel {
       background: color-mix(in srgb, Canvas 96%, #101827 4%);
@@ -230,12 +382,13 @@ function escapeHtml(text: string): string {
   });
 }
 
-function button(label: string, iconName: Parameters<typeof icon>[0], onClick: () => void): HTMLButtonElement {
+function button(labelKey: PromptWorkbenchContentLabel, iconName: Parameters<typeof icon>[0], onClick: () => void): HTMLButtonElement {
+  const buttonLabel = label(labelKey);
   const element = document.createElement("button");
   element.type = "button";
-  element.title = label;
-  element.setAttribute("aria-label", label);
-  element.innerHTML = icon(iconName);
+  element.dataset.labelKey = labelKey;
+  element.setAttribute("aria-label", buttonLabel);
+  element.innerHTML = `${icon(iconName)}<span class="turnmap-prompt-workbench-toolbar-label">${escapeHtml(buttonLabel)}</span>`;
   element.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -252,50 +405,106 @@ function positionNearAnchor(element: HTMLElement, anchor: HTMLElement, offset = 
   element.style.top = `${top}px`;
 }
 
+function positionToolbarNextToLauncher(element: HTMLElement, anchor: HTMLElement): void {
+  const rect = anchor.getBoundingClientRect();
+  const width = element.offsetWidth || 164;
+  const height = element.offsetHeight || 36;
+  const preferredLeft = rect.right + 6;
+  const left =
+    preferredLeft + width <= window.innerWidth - 8
+      ? preferredLeft
+      : Math.max(8, Math.min(window.innerWidth - width - 8, rect.left - width - 6));
+  const top = Math.max(8, Math.min(window.innerHeight - height - 8, rect.top + (rect.height - height) / 2));
+  element.style.left = `${left}px`;
+  element.style.top = `${top}px`;
+}
+
 function ensureLauncher(): HTMLButtonElement {
   if (launcher) return launcher;
   launcher = document.createElement("button");
   launcher.type = "button";
   launcher.className = "turnmap-prompt-workbench-button";
-  launcher.title = labels.launcher;
-  launcher.setAttribute("aria-label", labels.launcher);
-  launcher.innerHTML = icon("launcher");
+  launcher.setAttribute("aria-label", label("launcher"));
+  const image = document.createElement("img");
+  image.className = "turnmap-prompt-workbench-icon";
+  image.alt = "";
+  image.decoding = "async";
+  image.draggable = false;
+  image.src = getTurnMapLauncherIconUrl();
+  launcher.append(image);
+  void loadTurnMapLauncherIconSrc().then((src) => {
+    if (image.isConnected) image.src = src;
+  });
+  launcher.addEventListener("mouseenter", showToolbar);
+  launcher.addEventListener("mouseleave", scheduleToolbarClose);
+  launcher.addEventListener("focus", showToolbar);
   launcher.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    toggleToolbar();
+    showToolbar();
   });
   return launcher;
 }
 
 function removeSurfaces(): void {
+  if (toolbarCloseTimer !== null) {
+    window.clearTimeout(toolbarCloseTimer);
+    toolbarCloseTimer = null;
+  }
   toolbar?.remove();
   panel?.remove();
   toolbar = null;
   panel = null;
 }
 
-function toggleToolbar(): void {
-  if (toolbar) {
-    removeSurfaces();
-    return;
-  }
-  showToolbar();
+function cancelToolbarClose(): void {
+  if (toolbarCloseTimer === null) return;
+  window.clearTimeout(toolbarCloseTimer);
+  toolbarCloseTimer = null;
+}
+
+function scheduleToolbarClose(): void {
+  cancelToolbarClose();
+  toolbarCloseTimer = window.setTimeout(() => {
+    toolbarCloseTimer = null;
+    closeToolbar();
+  }, 120);
+}
+
+function closeToolbar(): void {
+  if (!toolbar) return;
+  const closingToolbar = toolbar;
+  toolbar = null;
+  closingToolbar.classList.remove("is-open");
+  closingToolbar.classList.add("is-closing");
+  window.setTimeout(() => closingToolbar.remove(), 150);
 }
 
 function showToolbar(): void {
   if (!launcher) return;
+  cancelToolbarClose();
   ensureStyle();
+  if (toolbar) {
+    positionToolbarNextToLauncher(toolbar, launcher);
+    toolbar.classList.add("is-open");
+    toolbar.classList.remove("is-closing");
+    return;
+  }
   toolbar = document.createElement("div");
   toolbar.className = "turnmap-prompt-workbench-toolbar";
+  toolbar.addEventListener("mouseenter", cancelToolbarClose);
+  toolbar.addEventListener("mouseleave", scheduleToolbarClose);
   toolbar.append(
-    button(labels.library, "library", () => void showLibraryPanel()),
-    button(labels.optimize, "sparkles", () => void showOptimizePanel()),
-    button(labels.variables, "braces", () => showVariablesPanel()),
-    button(labels.manage, "settings", openPromptWorkbenchSettings)
+    button("library", "library", () => void showLibraryPanel()),
+    button("optimize", "sparkles", () => void showOptimizePanel()),
+    button("variables", "braces", () => showVariablesPanel()),
+    button("manage", "settings", openPromptWorkbenchSettings)
   );
   document.body.append(toolbar);
-  positionNearAnchor(toolbar, launcher, 4);
+  positionToolbarNextToLauncher(toolbar, launcher);
+  requestAnimationFrame(() => {
+    toolbar?.classList.add("is-open");
+  });
 }
 
 function ensurePanel(view: WorkbenchView): HTMLDivElement {
@@ -328,8 +537,8 @@ async function showLibraryPanel(): Promise<void> {
   const library = await loadLibrary();
   const root = ensurePanel("library");
   root.innerHTML = `
-    <input type="search" aria-label="Search prompts" placeholder="Search prompts..." />
-    <div class="turnmap-prompt-panel__hint">Pinned, recent, and folder prompts are searched together.</div>
+    <input type="search" aria-label="${escapeHtml(label("searchPrompts"))}" placeholder="${escapeHtml(label("searchPrompts"))}" />
+    <div class="turnmap-prompt-panel__hint">${escapeHtml(label("searchHint"))}</div>
     <div data-list></div>
   `;
   const search = root.querySelector<HTMLInputElement>("input");
@@ -393,7 +602,7 @@ async function applyPrompt(prompt: PromptItem, values: Record<string, string>): 
 
   pendingRenderedPrompt =
     input.selectedText.trim() && !templateUsesSelection(prompt.content)
-      ? applySelectionWrapFallback(rendered.text, input.selectedText, labels.selectedText)
+      ? applySelectionWrapFallback(rendered.text, input.selectedText, label("selectedText"))
       : rendered.text;
   const mode = promptModeFromSmart(input, library.settings.defaultApplyMode);
   if (mode === "choose") {
@@ -431,15 +640,15 @@ function showApplyChoicePanel(prompt: PromptItem, target: PromptEditorTarget): v
   const root = ensurePanel("apply");
   root.innerHTML = `
     <strong>${escapeHtml(prompt.title)}</strong>
-    <p class="turnmap-prompt-panel__hint">Choose how to apply this prompt to the current input.</p>
+    <p class="turnmap-prompt-panel__hint">${escapeHtml(label("chooseApply"))}</p>
     <div class="turnmap-prompt-panel__preview">${escapeHtml(pendingRenderedPrompt)}</div>
     <div class="turnmap-prompt-panel__row"></div>
   `;
   const row = root.querySelector<HTMLElement>(".turnmap-prompt-panel__row");
   row?.append(
-    actionButton("Insert", "insert", () => void completePromptApplication(prompt, target, "insert")),
-    actionButton("Append", "insert", () => void completePromptApplication(prompt, target, "append")),
-    actionButton("Replace", "replace", () => void completePromptApplication(prompt, target, "replace"))
+    actionButton(label("insert"), "insert", () => void completePromptApplication(prompt, target, "insert")),
+    actionButton(label("append"), "insert", () => void completePromptApplication(prompt, target, "append")),
+    actionButton(label("replace"), "replace", () => void completePromptApplication(prompt, target, "replace"))
   );
 }
 
@@ -447,7 +656,6 @@ function actionButton(label: string, iconName: Parameters<typeof icon>[0], onCli
   const element = document.createElement("button");
   element.type = "button";
   element.innerHTML = `${icon(iconName)}<span>${escapeHtml(label)}</span>`;
-  element.title = label;
   element.setAttribute("aria-label", label);
   element.addEventListener("click", (event) => {
     event.preventDefault();
@@ -460,7 +668,7 @@ function actionButton(label: string, iconName: Parameters<typeof icon>[0], onCli
 function showVariablesPanel(missingVariables: string[] = []): void {
   const root = ensurePanel("variables");
   if (!activePrompt) {
-    root.innerHTML = `<p class="turnmap-prompt-panel__hint">Select a prompt with variables first.</p>`;
+    root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("selectVariables"))}</p>`;
     return;
   }
 
@@ -470,7 +678,7 @@ function showVariablesPanel(missingVariables: string[] = []): void {
     <div data-fields></div>
     <div class="turnmap-prompt-panel__preview" data-preview></div>
     <div class="turnmap-prompt-panel__row">
-      <button type="button" data-apply>${icon("insert")}<span>Apply</span></button>
+      <button type="button" data-apply>${icon("insert")}<span>${escapeHtml(label("apply"))}</span></button>
     </div>
   `;
   const fields = root.querySelector<HTMLElement>("[data-fields]");
@@ -495,7 +703,8 @@ function showVariablesPanel(missingVariables: string[] = []): void {
       selection: inputState.selectedText
     });
     if (preview) {
-      preview.textContent = rendered.text || (missingVariables.length > 0 ? `Missing: ${missingVariables.join(", ")}` : "");
+      preview.textContent =
+        rendered.text || (missingVariables.length > 0 ? label("missing", { names: missingVariables.join(", ") }) : "");
     }
   };
   root.querySelectorAll<HTMLInputElement>("[data-variable]").forEach((input) => input.addEventListener("input", renderPreview));
@@ -509,17 +718,17 @@ async function showOptimizePanel(): Promise<void> {
   const target = adapter.findEditor();
   const root = ensurePanel("optimize");
   if (!target) {
-    root.innerHTML = `<p class="turnmap-prompt-panel__hint">Could not find the ChatGPT input box.</p>`;
+    root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("inputMissing"))}</p>`;
     return;
   }
   const input = adapter.readInput(target).text.trim();
   if (!input) {
-    root.innerHTML = `<p class="turnmap-prompt-panel__hint">Write something first, then optimize it.</p>`;
+    root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("writeSomething"))}</p>`;
     return;
   }
 
   const library = await loadLibrary();
-  root.innerHTML = `<p class="turnmap-prompt-panel__hint">Optimizing current input...</p>`;
+  root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("optimizing"))}</p>`;
   try {
     const result = await optimizePromptInput({
       input,
@@ -534,11 +743,13 @@ async function showOptimizePanel(): Promise<void> {
     renderOptimizeResult(root, target, result, library.settings.aiOptimizeFormat);
   } catch (error) {
     root.innerHTML = `
-      <p class="turnmap-prompt-panel__hint">AI optimization failed.</p>
-      <details><summary>Error details</summary><pre class="turnmap-prompt-panel__preview">${escapeHtml(
+      <p class="turnmap-prompt-panel__hint">${escapeHtml(label("optimizationFailed"))}</p>
+      <details><summary>${escapeHtml(label("errorDetails"))}</summary><pre class="turnmap-prompt-panel__preview">${escapeHtml(
         sanitizePromptOptimizerError(error)
       )}</pre></details>
-      <div class="turnmap-prompt-panel__row"><button type="button" data-settings>${icon("settings")}<span>Open AI settings</span></button></div>
+      <div class="turnmap-prompt-panel__row"><button type="button" data-settings>${icon("settings")}<span>${escapeHtml(
+        label("openAiSettings")
+      )}</span></button></div>
     `;
     root.querySelector<HTMLButtonElement>("[data-settings]")?.addEventListener("click", openPromptWorkbenchSettings);
   }
@@ -550,7 +761,7 @@ function renderOptimizeResult(
   result: string,
   format: "simple-polish" | "strict-planning"
 ): void {
-  const title = format === "strict-planning" ? "Strict planning suggestions" : "Optimized prompt";
+  const title = format === "strict-planning" ? label("strictPlanningSuggestions") : label("optimizedPrompt");
   root.innerHTML = `
     <strong>${title}</strong>
     <div class="turnmap-prompt-panel__preview">${escapeHtml(result)}</div>
@@ -558,9 +769,9 @@ function renderOptimizeResult(
   `;
   const row = root.querySelector<HTMLElement>(".turnmap-prompt-panel__row");
   row?.append(
-    actionButton("Copy", "copy", () => void navigator.clipboard?.writeText(result)),
-    actionButton("Insert", "insert", () => adapter.writeInput(target, { text: result, mode: "insert" })),
-    actionButton("Replace", "replace", () => adapter.writeInput(target, { text: result, mode: "replace" }))
+    actionButton(label("copy"), "copy", () => void navigator.clipboard?.writeText(result)),
+    actionButton(label("insert"), "insert", () => adapter.writeInput(target, { text: result, mode: "insert" })),
+    actionButton(label("replace"), "replace", () => adapter.writeInput(target, { text: result, mode: "replace" }))
   );
 }
 
@@ -583,6 +794,7 @@ function ensurePromptWorkbenchObserver(): void {
 
 async function initializePromptWorkbench(): Promise<void> {
   if (!adapter.matches()) return;
+  startPromptWorkbenchI18nSync();
   const library = await loadLibrary();
   libraryCache = library;
   if (!library.settings.enabled) return;
@@ -595,11 +807,16 @@ async function initializePromptWorkbench(): Promise<void> {
 }
 
 export function startPromptWorkbench(): void {
+  startPromptWorkbenchI18nSync();
   void initializePromptWorkbench();
   document.addEventListener("click", (event) => {
     if (!panel && !toolbar) return;
     const target = event.target as Element | null;
     if (target?.closest(".turnmap-prompt-workbench-toolbar, .turnmap-prompt-panel, .turnmap-prompt-workbench-button")) return;
     removeSurfaces();
+  });
+  window.addEventListener("resize", () => {
+    if (toolbar && launcher) positionToolbarNextToLauncher(toolbar, launcher);
+    if (panel && launcher) positionNearAnchor(panel, launcher, 42);
   });
 }

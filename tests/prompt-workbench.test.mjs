@@ -251,6 +251,43 @@ test("prompt workbench keeps watching when the ChatGPT composer mounts after doc
   assert.match(source, /ensurePromptWorkbenchObserver\(\);\s+const mountPoint = adapter\.findMountPoint\(\);/);
 });
 
+test("prompt workbench launcher uses the circular TurnMap icon and voice-sized controls", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/index.ts", import.meta.url), "utf8");
+
+  assert.match(source, /getTurnMapLauncherIconUrl/);
+  assert.match(source, /loadTurnMapLauncherIconSrc/);
+  assert.match(source, /turnmap-prompt-workbench-icon/);
+  assert.match(source, /--turnmap-prompt-control-size:\s*36px/);
+  assert.match(source, /object-fit:\s*cover/);
+  assert.match(source, /border-radius:\s*999px/);
+});
+
+test("prompt workbench options expand on hover with immediate custom labels", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/index.ts", import.meta.url), "utf8");
+
+  assert.match(source, /mouseenter/);
+  assert.match(source, /mouseleave/);
+  assert.match(source, /positionToolbarNextToLauncher/);
+  assert.match(source, /turnmap-prompt-workbench-toolbar-label/);
+  assert.match(source, /requestAnimationFrame/);
+  assert.match(source, /aria-label/);
+  assert.doesNotMatch(source, /element\.title = label/);
+});
+
+test("prompt workbench content UI follows the same language setting as TurnMap settings", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/index.ts", import.meta.url), "utf8");
+  const i18nSource = readFileSync(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  assert.match(source, /loadLanguageSettings/);
+  assert.match(source, /translationsFor/);
+  assert.match(source, /LANGUAGE_STORAGE_KEY/);
+  assert.match(source, /CUSTOM_LANGUAGES_STORAGE_KEY/);
+  assert.match(source, /PROMPT_WORKBENCH_CONTENT_I18N_KEYS/);
+  assert.match(i18nSource, /promptWorkbench\.content\.library/);
+  assert.match(i18nSource, /promptWorkbench\.content\.optimize/);
+  assert.match(i18nSource, /promptWorkbench\.content\.variables/);
+});
+
 test("prompt workbench is wired into content and settings surfaces with i18n", () => {
   const contentSource = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
   const settingsSource = readFileSync(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
