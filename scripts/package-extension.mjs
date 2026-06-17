@@ -33,8 +33,23 @@ function assertArrayContainsAll(actual, expected, label) {
   }
 }
 
+async function assertContentScriptSelfContained() {
+  const contentScriptPath = path.join(distDir, "content", "index.js");
+  await assertFile(contentScriptPath, "Content script bundle");
+  const source = await readFile(contentScriptPath, "utf8");
+  const trimmed = source.trimStart();
+  if (
+    trimmed.startsWith("import ") ||
+    trimmed.startsWith("export ") ||
+    /\bfrom\s*["']\.\.\/assets\//.test(source)
+  ) {
+    throw new Error("Content script bundle must be self-contained; Chrome classic content scripts cannot import chunks.");
+  }
+}
+
 async function main() {
   await assertFile(manifestPath, "Built manifest");
+  await assertContentScriptSelfContained();
 
   const pkg = JSON.parse(await readFile(packageJsonPath, "utf8"));
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));

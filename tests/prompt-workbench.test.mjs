@@ -6,7 +6,8 @@ import {
   DEFAULT_PROMPT_WORKBENCH_SETTINGS,
   createDefaultPromptWorkbenchLibrary,
   exportPromptWorkbenchBackup,
-  importPromptWorkbenchBackup
+  importPromptWorkbenchBackup,
+  normalizePromptWorkbenchLibrary
 } from "../src/shared/prompt-workbench-storage.ts";
 import {
   applySelectionWrapFallback,
@@ -41,6 +42,7 @@ test("prompt workbench seeds editable local examples without storing API secrets
   );
   assert.ok(library.prompts.every((prompt) => prompt.folderId === examplesFolder.id));
   assert.ok(library.prompts.every((prompt) => prompt.enabled && prompt.createdAt === 1000 && prompt.updatedAt === 1000));
+  assert.ok(library.prompts.every((prompt) => /harness|acceptance|reproducible|checks/i.test(prompt.content)));
 
   const backup = exportPromptWorkbenchBackup(library, { now: 2000 });
   const serialized = JSON.stringify(backup);
@@ -97,6 +99,56 @@ test("prompt workbench import matches prompts by title and keeps local ids on ov
   assert.deepEqual(merged.summary, { added: 1, updated: 1, skipped: 0 });
 });
 
+test("prompt workbench migrates untouched old built-in prompts to English harness defaults", () => {
+  const oldTranslation =
+    "Translate the following content into {{language=English}}. Preserve terminology, formatting, code blocks, and proper nouns. If a phrase is ambiguous, keep the original in parentheses.\n\n{{input}}";
+  const oldSimpleOptimizer =
+    "You are an experienced prompt engineer. Rewrite the user's current input into a clearer prompt while preserving their intent, language, constraints, and tone. Return only the final improved prompt. Clarify the goal, input materials, expected output, boundaries, priorities, and acceptance criteria when they are implied. Do not invent unrelated requirements.";
+  const oldStrictOptimizer =
+    "You are an experienced prompt engineer and product-minded technical planner. Analyze only the user's current input. Return a Markdown table with columns: | 项目 | 当前判断 | 需要你补充/修改 |. Cover 目标, 输入材料, 期望输出, 边界限制, 技术路线, 验收标准, 风险点, 仍需确认. Mark each judgment as Provided, Suggested, Missing, or Confirm. You may suggest a direction, but never present inferred requirements as user-provided facts.";
+  const library = createDefaultPromptWorkbenchLibrary({ now: 1000, idFactory: idFactory() });
+  const oldLibrary = {
+    ...library,
+    optimizerPrompts: {
+      simplePolish: oldSimpleOptimizer,
+      strictPlanning: oldStrictOptimizer
+    },
+    prompts: library.prompts.map((prompt) =>
+      prompt.title === "Translation" ? { ...prompt, content: oldTranslation, tags: ["translation"] } : prompt
+    )
+  };
+
+  const migrated = normalizePromptWorkbenchLibrary(oldLibrary, { now: 2000 });
+  const translation = migrated.prompts.find((prompt) => prompt.title === "Translation");
+
+  assert.match(translation?.content ?? "", /translation harness engineer/i);
+  assert.deepEqual(translation?.tags, ["translation", "harness"]);
+  assert.match(migrated.optimizerPrompts.simplePolish, /harness engineer/i);
+  assert.match(migrated.optimizerPrompts.strictPlanning, /Harness \/ acceptance check/i);
+});
+
+test("prompt workbench migration preserves user-edited built-in prompts", () => {
+  const library = createDefaultPromptWorkbenchLibrary({ now: 1000, idFactory: idFactory() });
+  const edited = {
+    ...library,
+    optimizerPrompts: {
+      simplePolish: "My custom optimizer prompt.",
+      strictPlanning: "My custom strict planner."
+    },
+    prompts: library.prompts.map((prompt) =>
+      prompt.title === "Translation" ? { ...prompt, content: "My custom translation prompt.", tags: ["mine"] } : prompt
+    )
+  };
+
+  const normalized = normalizePromptWorkbenchLibrary(edited, { now: 2000 });
+  const translation = normalized.prompts.find((prompt) => prompt.title === "Translation");
+
+  assert.equal(translation?.content, "My custom translation prompt.");
+  assert.deepEqual(translation?.tags, ["mine"]);
+  assert.equal(normalized.optimizerPrompts.simplePolish, "My custom optimizer prompt.");
+  assert.equal(normalized.optimizerPrompts.strictPlanning, "My custom strict planner.");
+});
+
 test("prompt template variables support defaults, required values, input, and selection", () => {
   const variables = extractPromptTemplateVariables(
     "Act as {{role=senior engineer}}. Finish {{task}} for {{audience}}. Use {{input}} and {{selection}}. Repeat {{task}}."
@@ -132,7 +184,9 @@ test("prompt template variables support defaults, required values, input, and se
 
 test("prompt optimizer builds current-input-only requests for both formats", () => {
   assert.match(DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT, /experienced prompt engineer/i);
+  assert.match(DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT, /harness engineer/i);
   assert.match(DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT, /Markdown table/i);
+  assert.match(DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT, /Harness \/ acceptance check/i);
   assert.match(DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT, /Provided|Suggested|Missing|Confirm/i);
 
   const simple = buildPromptOptimizationMessages({
@@ -156,8 +210,11 @@ test("prompt optimizer builds current-input-only requests for both formats", () 
       strictPlanning: DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT
     }
   });
-  assert.match(strict.messages[0].content, /目标|输入|输出|边界|技术路线|验收标准/);
-  assert.match(strict.messages[0].content, /\| 项目 \| 当前判断 \| 需要你补充\/修改 \|/);
+  assert.match(strict.messages[0].content, /goal|input materials|desired output|boundaries|technical route|verification harness/i);
+  assert.match(
+    strict.messages[0].content,
+    /\| Area \| Current interpretation \| User needs to fill or confirm \| Harness \/ acceptance check \|/
+  );
 });
 
 test("ChatGPT prompt workbench adapter follows the my-prompt style boundary strategy", () => {
@@ -188,4 +245,13 @@ test("prompt workbench is wired into content and settings surfaces with i18n", (
   assert.match(i18nSource, /promptWorkbench\.action\.optimize/);
   assert.match(i18nSource, /promptWorkbench\.aria\.launcher/);
   assert.match(packageSource, /"version": "0\.8\.1"/);
+});
+
+test("prompt workbench keeps the content script self-contained for classic Chrome injection", () => {
+  const viteSource = readFileSync(new URL("../vite.content.config.ts", import.meta.url), "utf8");
+  const packageScript = readFileSync(new URL("../scripts/package-extension.mjs", import.meta.url), "utf8");
+
+  assert.match(viteSource, /inlineDynamicImports:\s*true/);
+  assert.match(viteSource, /src\/content\/index\.ts/);
+  assert.match(packageScript, /Content script bundle must be self-contained/);
 });

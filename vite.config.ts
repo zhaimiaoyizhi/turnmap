@@ -12,13 +12,11 @@ export default defineConfig({
         sidePanel: resolve(__dirname, "src/side-panel/index.html"),
         fullPage: resolve(__dirname, "src/full-page/index.html"),
         settingsPage: resolve(__dirname, "src/settings-page/index.html"),
-        background: resolve(__dirname, "src/background/service-worker.ts"),
-        content: resolve(__dirname, "src/content/index.ts")
+        background: resolve(__dirname, "src/background/service-worker.ts")
       },
       output: {
         entryFileNames: (chunk) => {
           if (chunk.name === "background") return "background/service-worker.js";
-          if (chunk.name === "content") return "content/index.js";
           return "assets/[name]-[hash].js";
         },
         chunkFileNames: "assets/[name]-[hash].js",

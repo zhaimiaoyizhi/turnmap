@@ -30,11 +30,12 @@ export { DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT, DEFAULT_STRICT_PLANNING_OPTIMIZ
 
 const STRICT_PLANNING_FORMAT_RULES = `
 The Markdown table must use this exact header:
-| 项目 | 当前判断 | 需要你补充/修改 |
-| -- | -- | -- |
+| Area | Current interpretation | User needs to fill or confirm | Harness / acceptance check |
+| -- | -- | -- | -- |
 
-Rows must cover: 目标, 输入材料, 期望输出, 边界限制, 技术路线, 验收标准, 风险点, 仍需确认.
-Each 当前判断 cell must mark the source status as one of: Provided, Suggested, Missing, Confirm.
+Rows must cover: goal, input materials, desired output, boundaries, assumptions, technical route, data/tools, acceptance criteria, verification harness, risks, and open questions.
+Each Current interpretation cell must mark the source status as one of: Provided, Suggested, Missing, Confirm.
+The Harness / acceptance check column must describe how the improved prompt can be verified or judged complete.
 `.trim();
 
 export function buildPromptOptimizationMessages(request: PromptOptimizationRequest): PromptOptimizationMessages {

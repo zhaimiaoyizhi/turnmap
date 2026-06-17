@@ -93,10 +93,10 @@ export const DEFAULT_PROMPT_WORKBENCH_SETTINGS: PromptWorkbenchSettings = {
 };
 
 export const DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT =
-  "You are an experienced prompt engineer. Rewrite the user's current input into a clearer prompt while preserving their intent, language, constraints, and tone. Return only the final improved prompt. Clarify the goal, input materials, expected output, boundaries, priorities, and acceptance criteria when they are implied. Do not invent unrelated requirements.";
+  "You are an experienced prompt engineer and harness engineer. Rewrite only the user's current input into a clearer final prompt while preserving intent, language, constraints, and tone. Return only the improved prompt. Make the goal, input materials, output contract, boundaries, assumptions, technical route, acceptance checks, and verification harness explicit when they are implied. Do not invent unrelated requirements; mark uncertainty as something to confirm inside the prompt.";
 
 export const DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT =
-  "You are an experienced prompt engineer and product-minded technical planner. Analyze only the user's current input. Return a Markdown table with columns: | 项目 | 当前判断 | 需要你补充/修改 |. Cover 目标, 输入材料, 期望输出, 边界限制, 技术路线, 验收标准, 风险点, 仍需确认. Mark each judgment as Provided, Suggested, Missing, or Confirm. You may suggest a direction, but never present inferred requirements as user-provided facts.";
+  "You are an experienced prompt engineer and harness engineer. Analyze only the user's current input and return an English Markdown table with columns: | Area | Current interpretation | User needs to fill or confirm | Harness / acceptance check |. Cover goal, input materials, desired output, boundaries, assumptions, technical route, data/tools, acceptance criteria, verification harness, risks, and open questions. Mark each interpretation as Provided, Suggested, Missing, or Confirm. You may propose a direction, but never present inferred requirements as user-provided facts.";
 
 export const DEFAULT_OPTIMIZER_PROMPTS: PromptOptimizerPrompts = {
   simplePolish: DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT,
@@ -107,39 +107,70 @@ const EXAMPLE_PROMPTS: Array<Pick<PromptItem, "title" | "content" | "tags" | "no
   {
     title: "Translation",
     content:
-      "Translate the following content into {{language=English}}. Preserve terminology, formatting, code blocks, and proper nouns. If a phrase is ambiguous, keep the original in parentheses.\n\n{{input}}",
-    tags: ["translation"],
-    note: "Translate while preserving structure."
+      "Act as a careful translation harness engineer. Translate the input into {{language=English}}.\n\nInput:\n{{input}}\n\nOutput contract:\n- Preserve terminology, formatting, code blocks, links, tables, and proper nouns.\n- Keep ambiguous source terms in parentheses after the translation.\n- Do not summarize or add new claims.\n\nAcceptance checks:\n- Every source paragraph has a corresponding translated paragraph.\n- Code and quoted identifiers remain unchanged unless translation is explicitly needed.",
+    tags: ["translation", "harness"],
+    note: "Translate with preservation checks."
   },
   {
     title: "Project planning",
     content:
-      "Act as an experienced product manager and technical lead. Turn the following idea into a scoped project plan with goals, non-goals, modules, milestones, risks, and acceptance criteria.\n\n{{input}}",
-    tags: ["planning"],
-    note: "Convert a rough idea into an executable plan."
+      "Act as an experienced product manager, technical lead, and harness engineer. Turn the following idea into an executable project plan.\n\nIdea:\n{{input}}\n\nReturn:\n1. Goal and non-goals.\n2. User workflows and module boundaries.\n3. Technical route and dependency assumptions.\n4. Milestones with deliverables.\n5. Risks and decision points.\n6. Acceptance tests and a minimal validation harness for each critical workflow.\n\nDo not expand scope beyond the stated idea; list open questions separately.",
+    tags: ["planning", "harness"],
+    note: "Convert a rough idea into a validated plan."
   },
   {
     title: "Literature search",
     content:
-      "Help me design a literature search plan for {{topic}}. Include keywords, inclusion criteria, exclusion criteria, target databases, screening steps, and a synthesis outline.",
-    tags: ["research"],
-    note: "Prepare academic search strategy."
+      "Act as a research-methods harness engineer. Design a reproducible literature search plan for {{topic}}.\n\nReturn:\n- Research question and scope.\n- Keyword matrix with synonyms and Boolean query drafts.\n- Target databases and date/language limits.\n- Inclusion and exclusion criteria.\n- Screening workflow with duplicate handling.\n- Evidence extraction table fields.\n- Synthesis outline and quality checks.\n\nMake the process reproducible enough for another reviewer to rerun it.",
+    tags: ["research", "harness"],
+    note: "Prepare reproducible academic search strategy."
   },
   {
     title: "Document formatting",
     content:
-      "Improve the structure and formatting of the following document. Keep the original meaning, make headings clearer, fix list hierarchy, and return an editable Markdown version.\n\n{{input}}",
-    tags: ["writing"],
-    note: "Clean up document structure."
+      "Act as a document-quality harness engineer. Improve the structure and formatting of the document below while preserving the original meaning.\n\nDocument:\n{{input}}\n\nReturn an editable Markdown version plus a short formatting checklist covering headings, list hierarchy, table consistency, terminology consistency, and unresolved ambiguities. Do not remove important details.",
+    tags: ["writing", "harness"],
+    note: "Clean up document structure with checks."
   },
   {
     title: "Bug reproduction",
     content:
-      "Convert this bug report into a clear reproduction report with environment, steps to reproduce, expected result, actual result, suspected area, missing evidence, and verification commands.\n\n{{input}}",
-    tags: ["debug"],
-    note: "Make bug reports actionable."
+      "Act as a debugging harness engineer. Convert this bug report into a reproducible investigation plan.\n\nBug report:\n{{input}}\n\nReturn:\n1. Environment and preconditions.\n2. Minimal reproduction steps.\n3. Expected result vs actual result.\n4. Suspected failure boundary and ranked hypotheses.\n5. Required logs, screenshots, or fixtures.\n6. Verification commands or browser steps.\n7. Regression test proposal that would fail before the fix and pass after it.",
+    tags: ["debug", "harness"],
+    note: "Make bug reports reproducible and testable."
   }
 ];
+
+const LEGACY_SIMPLE_POLISH_OPTIMIZER_PROMPT =
+  "You are an experienced prompt engineer. Rewrite the user's current input into a clearer prompt while preserving their intent, language, constraints, and tone. Return only the final improved prompt. Clarify the goal, input materials, expected output, boundaries, priorities, and acceptance criteria when they are implied. Do not invent unrelated requirements.";
+
+const LEGACY_STRICT_PLANNING_OPTIMIZER_PROMPT =
+  "You are an experienced prompt engineer and product-minded technical planner. Analyze only the user's current input. Return a Markdown table with columns: | 项目 | 当前判断 | 需要你补充/修改 |. Cover 目标, 输入材料, 期望输出, 边界限制, 技术路线, 验收标准, 风险点, 仍需确认. Mark each judgment as Provided, Suggested, Missing, or Confirm. You may suggest a direction, but never present inferred requirements as user-provided facts.";
+
+const LEGACY_EXAMPLE_PROMPT_CONTENT_BY_TITLE = new Map<string, string>([
+  [
+    "Translation",
+    "Translate the following content into {{language=English}}. Preserve terminology, formatting, code blocks, and proper nouns. If a phrase is ambiguous, keep the original in parentheses.\n\n{{input}}"
+  ],
+  [
+    "Project planning",
+    "Act as an experienced product manager and technical lead. Turn the following idea into a scoped project plan with goals, non-goals, modules, milestones, risks, and acceptance criteria.\n\n{{input}}"
+  ],
+  [
+    "Literature search",
+    "Help me design a literature search plan for {{topic}}. Include keywords, inclusion criteria, exclusion criteria, target databases, screening steps, and a synthesis outline."
+  ],
+  [
+    "Document formatting",
+    "Improve the structure and formatting of the following document. Keep the original meaning, make headings clearer, fix list hierarchy, and return an editable Markdown version.\n\n{{input}}"
+  ],
+  [
+    "Bug reproduction",
+    "Convert this bug report into a clear reproduction report with environment, steps to reproduce, expected result, actual result, suspected area, missing evidence, and verification commands.\n\n{{input}}"
+  ]
+]);
+
+const EXAMPLE_PROMPT_BY_TITLE = new Map(EXAMPLE_PROMPTS.map((prompt) => [prompt.title, prompt]));
 
 function nowOrDefault(now?: number): number {
   return typeof now === "number" && Number.isFinite(now) ? now : Date.now();
@@ -284,6 +315,31 @@ export function normalizeOptimizerPrompts(value: unknown): PromptOptimizerPrompt
   };
 }
 
+function migrateBuiltInPromptContent(library: PromptWorkbenchLibrary, timestamp: number): PromptWorkbenchLibrary {
+  const optimizerPrompts = { ...library.optimizerPrompts };
+  if (optimizerPrompts.simplePolish === LEGACY_SIMPLE_POLISH_OPTIMIZER_PROMPT) {
+    optimizerPrompts.simplePolish = DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT;
+  }
+  if (optimizerPrompts.strictPlanning === LEGACY_STRICT_PLANNING_OPTIMIZER_PROMPT) {
+    optimizerPrompts.strictPlanning = DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT;
+  }
+
+  const prompts = library.prompts.map((prompt) => {
+    const legacyContent = LEGACY_EXAMPLE_PROMPT_CONTENT_BY_TITLE.get(prompt.title);
+    const nextDefault = EXAMPLE_PROMPT_BY_TITLE.get(prompt.title);
+    if (!legacyContent || !nextDefault || prompt.content !== legacyContent) return prompt;
+    return {
+      ...prompt,
+      content: nextDefault.content,
+      tags: nextDefault.tags,
+      note: nextDefault.note,
+      updatedAt: timestamp
+    };
+  });
+
+  return { ...library, optimizerPrompts, prompts };
+}
+
 export function normalizePromptWorkbenchLibrary(
   value: unknown,
   options: { now?: number; idFactory?: IdFactory } = {}
@@ -312,14 +368,17 @@ export function normalizePromptWorkbenchLibrary(
       : null;
   if (defaultLibrary) return defaultLibrary;
 
-  return {
+  return migrateBuiltInPromptContent(
+    {
     schemaVersion: PROMPT_WORKBENCH_SCHEMA_VERSION,
     folders,
     prompts,
     settings: normalizePromptWorkbenchSettings(source.settings),
     optimizerPrompts: normalizeOptimizerPrompts(source.optimizerPrompts),
     examplesSeeded: Boolean(source.examplesSeeded)
-  };
+    },
+    timestamp
+  );
 }
 
 export async function loadPromptWorkbenchLibrary(): Promise<PromptWorkbenchLibrary> {
