@@ -85,8 +85,13 @@ export class ChatGPTPromptWorkbenchAdapter {
     }
 
     const selection = window.getSelection();
+    const anchorNode = selection?.anchorNode ?? null;
+    const focusNode = selection?.focusNode ?? null;
     const selectedText =
-      selection && selection.rangeCount > 0 && element.contains(selection.anchorNode) && element.contains(selection.focusNode)
+      selection &&
+      selection.rangeCount > 0 &&
+      isNodeWithinElement(element, anchorNode) &&
+      isNodeWithinElement(element, focusNode)
         ? selection.toString()
         : "";
 
@@ -213,6 +218,10 @@ function buttonText(button: HTMLElement): string {
 function isRejectedComposerButton(button: HTMLElement): boolean {
   const text = buttonText(button);
   return REJECTED_COMPOSER_BUTTON_PATTERN.test(text);
+}
+
+function isNodeWithinElement(element: HTMLElement, node: Node | null | undefined): boolean {
+  return node instanceof Node && element.contains(node);
 }
 
 function nextTextareaValue(value: string, request: PromptWriteRequest, selectionStart: number, selectionEnd: number): string {

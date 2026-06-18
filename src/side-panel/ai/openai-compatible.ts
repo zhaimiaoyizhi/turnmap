@@ -274,10 +274,15 @@ async function ensureHostPermission(settings: AiSettings): Promise<void> {
   const pattern = hostPatternForBaseUrl(settings.baseUrl);
   if (!pattern) return;
 
-  const hasPermission = await chrome.permissions.contains({ origins: [pattern] }).catch(() => true);
-  if (hasPermission) return;
+  if (!chrome.permissions?.contains || !chrome.permissions?.request) {
+    // The permissions API is unavailable in this extension context, for example content scripts.
+    return;
+  }
 
-  const granted = await chrome.permissions.request({ origins: [pattern] }).catch(() => false);
+  const hasPermission = await chrome.permissions?.contains({ origins: [pattern] }).catch(() => true);
+  if (hasPermission !== false) return;
+
+  const granted = await chrome.permissions?.request({ origins: [pattern] }).catch(() => false);
   if (!granted) {
     throw new Error(`Permission is required to contact ${pattern}`);
   }

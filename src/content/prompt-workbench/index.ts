@@ -59,11 +59,16 @@ const PROMPT_WORKBENCH_CONTENT_I18N_KEYS = {
   strictPlanningSuggestions: "promptWorkbench.content.strictPlanningSuggestions",
   optimizationFailed: "promptWorkbench.content.optimizationFailed",
   errorDetails: "promptWorkbench.content.errorDetails",
+  optimizeStageReadInput: "promptWorkbench.content.optimizeStage.readInput",
+  optimizeStageRequestChatCompletion: "promptWorkbench.content.optimizeStage.requestChatCompletion",
+  optimizeStageWriteInput: "promptWorkbench.content.optimizeStage.writeInput",
+  optimizeFailureHint: "promptWorkbench.content.optimizeFailureHint",
   openAiSettings: "promptWorkbench.content.openAiSettings",
   copy: "promptWorkbench.content.copy"
 } satisfies Record<string, I18nKey>;
 
 type PromptWorkbenchContentLabel = keyof typeof PROMPT_WORKBENCH_CONTENT_I18N_KEYS;
+type PromptOptimizeFailureStage = "readInput" | "requestChatCompletion" | "writeInput";
 
 let promptWorkbenchTranslations: TranslationMap = translationsFor("en", []);
 let promptWorkbenchLocale: PromptWorkbenchLocale = "en";
@@ -763,7 +768,13 @@ async function showOptimizePanel(): Promise<void> {
     repositionPanel();
     return;
   }
-  const input = adapter.readInput(target).text.trim();
+  let input = "";
+  try {
+    input = adapter.readInput(target).text.trim();
+  } catch (error) {
+    renderOptimizeFailure(root, "readInput", error);
+    return;
+  }
   if (!input) {
     root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("writeSomething"))}</p>`;
     repositionPanel();
@@ -780,24 +791,50 @@ async function showOptimizePanel(): Promise<void> {
       optimizerPrompts: library.optimizerPrompts
     });
     if (!library.settings.aiOptimizePreview && library.settings.aiOptimizeFormat === "simple-polish") {
-      adapter.writeInput(target, { text: result, mode: "replace" });
-      removeSurfaces();
+      if (writeOptimizedPrompt(root, target, result, "replace")) removeSurfaces();
       return;
     }
     renderOptimizeResult(root, target, result, library.settings.aiOptimizeFormat);
   } catch (error) {
-    root.innerHTML = `
-      <p class="turnmap-prompt-panel__hint">${escapeHtml(label("optimizationFailed"))}</p>
-      <details><summary>${escapeHtml(label("errorDetails"))}</summary><pre class="turnmap-prompt-panel__preview">${escapeHtml(
-        sanitizePromptOptimizerError(error)
-      )}</pre></details>
-      <div class="turnmap-prompt-panel__row"><button type="button" data-settings>${icon("settings")}<span>${escapeHtml(
-        label("openAiSettings")
-      )}</span></button></div>
-    `;
-    repositionPanel();
-    root.querySelector<HTMLButtonElement>("[data-settings]")?.addEventListener("click", openPromptWorkbenchSettings);
+    renderOptimizeFailure(root, "requestChatCompletion", error);
   }
+}
+
+function optimizeStageLabel(stage: PromptOptimizeFailureStage): string {
+  if (stage === "readInput") return label("optimizeStageReadInput");
+  if (stage === "writeInput") return label("optimizeStageWriteInput");
+  return label("optimizeStageRequestChatCompletion");
+}
+
+function renderOptimizeFailure(root: HTMLElement, stage: PromptOptimizeFailureStage, error: unknown): void {
+  root.innerHTML = `
+    <p class="turnmap-prompt-panel__hint">${escapeHtml(label("optimizationFailed"))}</p>
+    <div class="turnmap-prompt-panel__preview">${escapeHtml(optimizeStageLabel(stage))}</div>
+    <p class="turnmap-prompt-panel__hint">${escapeHtml(label("optimizeFailureHint"))}</p>
+    <details open><summary>${escapeHtml(label("errorDetails"))}</summary><pre class="turnmap-prompt-panel__preview">${escapeHtml(
+      sanitizePromptOptimizerError(error)
+    )}</pre></details>
+    <div class="turnmap-prompt-panel__row"><button type="button" data-settings>${icon("settings")}<span>${escapeHtml(
+      label("openAiSettings")
+    )}</span></button></div>
+  `;
+  repositionPanel();
+  root.querySelector<HTMLButtonElement>("[data-settings]")?.addEventListener("click", openPromptWorkbenchSettings);
+}
+
+function writeOptimizedPrompt(
+  root: HTMLElement,
+  target: PromptEditorTarget,
+  result: string,
+  mode: Exclude<PromptApplyMode, "smart">
+): boolean {
+  if (adapter.writeInput(target, { text: result, mode })) return true;
+  renderOptimizeFailure(
+    root,
+    "writeInput",
+    new Error("TurnMap could not write the optimized prompt back into the ChatGPT input box. The editor may have remounted or rejected the synthetic input event.")
+  );
+  return false;
 }
 
 function renderOptimizeResult(
@@ -816,8 +853,8 @@ function renderOptimizeResult(
   const row = root.querySelector<HTMLElement>(".turnmap-prompt-panel__row");
   row?.append(
     actionButton(label("copy"), "copy", () => void navigator.clipboard?.writeText(result)),
-    actionButton(label("insert"), "insert", () => adapter.writeInput(target, { text: result, mode: "insert" })),
-    actionButton(label("replace"), "replace", () => adapter.writeInput(target, { text: result, mode: "replace" }))
+    actionButton(label("insert"), "insert", () => writeOptimizedPrompt(root, target, result, "insert")),
+    actionButton(label("replace"), "replace", () => writeOptimizedPrompt(root, target, result, "replace"))
   );
 }
 

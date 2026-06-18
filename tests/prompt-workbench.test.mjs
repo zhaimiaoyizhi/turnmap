@@ -319,6 +319,39 @@ test("prompt workbench panel positioning clamps to the viewport instead of being
   assert.match(source, /Math\.min\(window\.innerWidth/);
 });
 
+test("prompt optimizer can run from content scripts without the permissions API", () => {
+  const source = readFileSync(new URL("../src/side-panel/ai/openai-compatible.ts", import.meta.url), "utf8");
+
+  assert.match(source, /chrome\.permissions\?\.contains/);
+  assert.match(source, /chrome\.permissions\?\.request/);
+  assert.match(source, /permissions API is unavailable in this extension context/i);
+  assert.doesNotMatch(source, /chrome\.permissions\.contains\(/);
+});
+
+test("ChatGPT prompt workbench reads contenteditable selections defensively", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/chatgpt-adapter.ts", import.meta.url), "utf8");
+
+  assert.match(source, /isNodeWithinElement/);
+  assert.match(source, /node instanceof Node/);
+  assert.match(source, /selection\?\.anchorNode/);
+  assert.match(source, /selection\?\.focusNode/);
+  assert.doesNotMatch(source, /element\.contains\(selection\.anchorNode\)/);
+});
+
+test("prompt workbench reports detailed AI optimize failure stages", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/index.ts", import.meta.url), "utf8");
+  const i18nSource = readFileSync(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  assert.match(source, /renderOptimizeFailure/);
+  assert.match(source, /readInput/);
+  assert.match(source, /requestChatCompletion/);
+  assert.match(source, /writeInput/);
+  assert.match(source, /sanitizePromptOptimizerError/);
+  assert.match(i18nSource, /promptWorkbench\.content\.optimizeStage\.readInput/);
+  assert.match(i18nSource, /promptWorkbench\.content\.optimizeStage\.requestChatCompletion/);
+  assert.match(i18nSource, /promptWorkbench\.content\.optimizeStage\.writeInput/);
+});
+
 test("prompt workbench is wired into content and settings surfaces with i18n", () => {
   const contentSource = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
   const settingsSource = readFileSync(new URL("../src/settings-page/main.tsx", import.meta.url), "utf8");
