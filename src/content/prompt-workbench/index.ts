@@ -1,9 +1,12 @@
 import { optimizePromptInput, sanitizePromptOptimizerError } from "../../side-panel/ai/prompt-optimizer";
 import {
   loadPromptWorkbenchLibrary,
+  localizePromptWorkbenchLibrary,
+  promptWorkbenchLocaleFromLanguageMode,
   savePromptWorkbenchLibrary,
   type PromptApplyMode,
   type PromptItem,
+  type PromptWorkbenchLocale,
   type PromptWorkbenchLibrary
 } from "../../shared/prompt-workbench-storage";
 import {
@@ -63,6 +66,7 @@ const PROMPT_WORKBENCH_CONTENT_I18N_KEYS = {
 type PromptWorkbenchContentLabel = keyof typeof PROMPT_WORKBENCH_CONTENT_I18N_KEYS;
 
 let promptWorkbenchTranslations: TranslationMap = translationsFor("en", []);
+let promptWorkbenchLocale: PromptWorkbenchLocale = "en";
 
 let launcher: HTMLButtonElement | null = null;
 let toolbar: HTMLDivElement | null = null;
@@ -117,6 +121,8 @@ function updateToolbarLabels(): void {
 async function refreshPromptWorkbenchTranslations(): Promise<void> {
   const settings = await loadLanguageSettings();
   promptWorkbenchTranslations = translationsFor(settings.mode, settings.customLanguages);
+  promptWorkbenchLocale = promptWorkbenchLocaleFromLanguageMode(settings.mode);
+  if (libraryCache) libraryCache = localizePromptWorkbenchLibrary(libraryCache, { locale: promptWorkbenchLocale });
   updateLauncherLabel();
   updateToolbarLabels();
 }
@@ -286,6 +292,7 @@ function ensureStyle(): void {
       padding: 10px;
       position: fixed;
       width: 340px;
+      max-width: calc(100vw - 16px);
       z-index: 2147483600;
     }
     .turnmap-prompt-panel input,
@@ -405,6 +412,27 @@ function positionNearAnchor(element: HTMLElement, anchor: HTMLElement, offset = 
   element.style.top = `${top}px`;
 }
 
+function positionPanelNearAnchor(element: HTMLElement, anchor: HTMLElement, offset = 8): void {
+  const margin = 8;
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(window.innerWidth - margin * 2, element.offsetWidth || 340);
+  const spaceAbove = Math.max(0, rect.top - margin - offset);
+  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - margin - offset);
+  const preferredHeight = Math.min(element.scrollHeight || element.offsetHeight || 420, 460);
+  const openAbove = spaceAbove >= preferredHeight || spaceAbove >= spaceBelow;
+  const availableHeight = Math.max(180, openAbove ? spaceAbove : spaceBelow);
+
+  element.style.maxHeight = `${Math.min(460, availableHeight)}px`;
+  element.style.width = `${width}px`;
+
+  const measuredHeight = Math.min(element.offsetHeight || preferredHeight, availableHeight);
+  const top = openAbove ? rect.top - measuredHeight - offset : rect.bottom + offset;
+  const left = Math.max(margin, Math.min(window.innerWidth - width - margin, rect.left));
+
+  element.style.left = `${left}px`;
+  element.style.top = `${Math.max(margin, Math.min(window.innerHeight - measuredHeight - margin, top))}px`;
+}
+
 function positionToolbarNextToLauncher(element: HTMLElement, anchor: HTMLElement): void {
   const rect = anchor.getBoundingClientRect();
   const width = element.offsetWidth || 164;
@@ -513,12 +541,20 @@ function ensurePanel(view: WorkbenchView): HTMLDivElement {
   panel = document.createElement("div");
   panel.className = `turnmap-prompt-panel turnmap-prompt-panel--${view}`;
   document.body.append(panel);
-  positionNearAnchor(panel, launcher, 42);
+  requestAnimationFrame(() => {
+    if (panel && launcher) positionPanelNearAnchor(panel, launcher);
+  });
   return panel;
 }
 
+function repositionPanel(): void {
+  requestAnimationFrame(() => {
+    if (panel && launcher) positionPanelNearAnchor(panel, launcher);
+  });
+}
+
 async function loadLibrary(): Promise<PromptWorkbenchLibrary> {
-  libraryCache = await loadPromptWorkbenchLibrary();
+  libraryCache = await loadPromptWorkbenchLibrary({ locale: promptWorkbenchLocale });
   return libraryCache;
 }
 
@@ -541,6 +577,7 @@ async function showLibraryPanel(): Promise<void> {
     <div class="turnmap-prompt-panel__hint">${escapeHtml(label("searchHint"))}</div>
     <div data-list></div>
   `;
+  repositionPanel();
   const search = root.querySelector<HTMLInputElement>("input");
   const list = root.querySelector<HTMLElement>("[data-list]");
   const render = () => {
@@ -564,6 +601,7 @@ async function showLibraryPanel(): Promise<void> {
       item.addEventListener("click", () => void choosePrompt(prompt));
       list.append(item);
     }
+    repositionPanel();
   };
   search?.addEventListener("input", render);
   render();
@@ -630,7 +668,7 @@ async function completePromptApplication(
         }
       : item
   );
-  await savePromptWorkbenchLibrary(library);
+  await savePromptWorkbenchLibrary(library, { locale: promptWorkbenchLocale });
   libraryCache = library;
   removeSurfaces();
   target.element.focus();
@@ -644,6 +682,7 @@ function showApplyChoicePanel(prompt: PromptItem, target: PromptEditorTarget): v
     <div class="turnmap-prompt-panel__preview">${escapeHtml(pendingRenderedPrompt)}</div>
     <div class="turnmap-prompt-panel__row"></div>
   `;
+  repositionPanel();
   const row = root.querySelector<HTMLElement>(".turnmap-prompt-panel__row");
   row?.append(
     actionButton(label("insert"), "insert", () => void completePromptApplication(prompt, target, "insert")),
@@ -669,6 +708,7 @@ function showVariablesPanel(missingVariables: string[] = []): void {
   const root = ensurePanel("variables");
   if (!activePrompt) {
     root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("selectVariables"))}</p>`;
+    repositionPanel();
     return;
   }
 
@@ -681,6 +721,7 @@ function showVariablesPanel(missingVariables: string[] = []): void {
       <button type="button" data-apply>${icon("insert")}<span>${escapeHtml(label("apply"))}</span></button>
     </div>
   `;
+  repositionPanel();
   const fields = root.querySelector<HTMLElement>("[data-fields]");
   const preview = root.querySelector<HTMLElement>("[data-preview]");
   const values: Record<string, string> = {};
@@ -719,16 +760,19 @@ async function showOptimizePanel(): Promise<void> {
   const root = ensurePanel("optimize");
   if (!target) {
     root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("inputMissing"))}</p>`;
+    repositionPanel();
     return;
   }
   const input = adapter.readInput(target).text.trim();
   if (!input) {
     root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("writeSomething"))}</p>`;
+    repositionPanel();
     return;
   }
 
   const library = await loadLibrary();
   root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("optimizing"))}</p>`;
+  repositionPanel();
   try {
     const result = await optimizePromptInput({
       input,
@@ -751,6 +795,7 @@ async function showOptimizePanel(): Promise<void> {
         label("openAiSettings")
       )}</span></button></div>
     `;
+    repositionPanel();
     root.querySelector<HTMLButtonElement>("[data-settings]")?.addEventListener("click", openPromptWorkbenchSettings);
   }
 }
@@ -767,6 +812,7 @@ function renderOptimizeResult(
     <div class="turnmap-prompt-panel__preview">${escapeHtml(result)}</div>
     <div class="turnmap-prompt-panel__row"></div>
   `;
+  repositionPanel();
   const row = root.querySelector<HTMLElement>(".turnmap-prompt-panel__row");
   row?.append(
     actionButton(label("copy"), "copy", () => void navigator.clipboard?.writeText(result)),
@@ -817,6 +863,6 @@ export function startPromptWorkbench(): void {
   });
   window.addEventListener("resize", () => {
     if (toolbar && launcher) positionToolbarNextToLauncher(toolbar, launcher);
-    if (panel && launcher) positionNearAnchor(panel, launcher, 42);
+    if (panel && launcher) positionPanelNearAnchor(panel, launcher);
   });
 }

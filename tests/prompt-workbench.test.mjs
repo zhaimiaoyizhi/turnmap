@@ -6,6 +6,8 @@ import {
   DEFAULT_PROMPT_WORKBENCH_SETTINGS,
   createDefaultPromptWorkbenchLibrary,
   exportPromptWorkbenchBackup,
+  getDefaultPromptWorkbenchOptimizerPrompts,
+  localizePromptWorkbenchLibrary,
   importPromptWorkbenchBackup,
   normalizePromptWorkbenchLibrary
 } from "../src/shared/prompt-workbench-storage.ts";
@@ -42,7 +44,8 @@ test("prompt workbench seeds editable local examples without storing API secrets
   );
   assert.ok(library.prompts.every((prompt) => prompt.folderId === examplesFolder.id));
   assert.ok(library.prompts.every((prompt) => prompt.enabled && prompt.createdAt === 1000 && prompt.updatedAt === 1000));
-  assert.ok(library.prompts.every((prompt) => /harness|acceptance|reproducible|checks/i.test(prompt.content)));
+  assert.ok(library.prompts.every((prompt) => /return|output|quality|preserve|steps|scope/i.test(prompt.content)));
+  assert.ok(library.prompts.every((prompt) => !/harness/i.test(`${prompt.title} ${prompt.content} ${prompt.tags.join(" ")}`)));
 
   const backup = exportPromptWorkbenchBackup(library, { now: 2000 });
   const serialized = JSON.stringify(backup);
@@ -99,7 +102,7 @@ test("prompt workbench import matches prompts by title and keeps local ids on ov
   assert.deepEqual(merged.summary, { added: 1, updated: 1, skipped: 0 });
 });
 
-test("prompt workbench migrates untouched old built-in prompts to English harness defaults", () => {
+test("prompt workbench localizes untouched built-in examples and optimizer prompts without harness wording", () => {
   const oldTranslation =
     "Translate the following content into {{language=English}}. Preserve terminology, formatting, code blocks, and proper nouns. If a phrase is ambiguous, keep the original in parentheses.\n\n{{input}}";
   const oldSimpleOptimizer =
@@ -121,10 +124,22 @@ test("prompt workbench migrates untouched old built-in prompts to English harnes
   const migrated = normalizePromptWorkbenchLibrary(oldLibrary, { now: 2000 });
   const translation = migrated.prompts.find((prompt) => prompt.title === "Translation");
 
-  assert.match(translation?.content ?? "", /translation harness engineer/i);
-  assert.deepEqual(translation?.tags, ["translation", "harness"]);
-  assert.match(migrated.optimizerPrompts.simplePolish, /harness engineer/i);
-  assert.match(migrated.optimizerPrompts.strictPlanning, /Harness \/ acceptance check/i);
+  assert.match(translation?.content ?? "", /careful translator/i);
+  assert.deepEqual(translation?.tags, ["translation"]);
+  assert.doesNotMatch(JSON.stringify(migrated), /harness/i);
+
+  const zh = localizePromptWorkbenchLibrary(migrated, { locale: "zh", now: 3000 });
+  assert.deepEqual(
+    zh.prompts.map((prompt) => prompt.title),
+    ["翻译", "项目规划", "文献检索", "文档排版优化", "缺陷复现"]
+  );
+  assert.match(zh.prompts[0].content, /翻译为/);
+  assert.match(zh.optimizerPrompts.simplePolish, /经验丰富的提示词工程师/);
+  assert.doesNotMatch(JSON.stringify(zh), /harness/i);
+
+  const enAgain = localizePromptWorkbenchLibrary(zh, { locale: "en", now: 4000 });
+  assert.equal(enAgain.prompts[0].title, "Translation");
+  assert.match(enAgain.optimizerPrompts.strictPlanning, /\| Area \| Current interpretation \| User needs to fill or confirm \| Verification check \|/);
 });
 
 test("prompt workbench migration preserves user-edited built-in prompts", () => {
@@ -184,9 +199,10 @@ test("prompt template variables support defaults, required values, input, and se
 
 test("prompt optimizer builds current-input-only requests for both formats", () => {
   assert.match(DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT, /experienced prompt engineer/i);
-  assert.match(DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT, /harness engineer/i);
+  assert.doesNotMatch(DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT, /harness/i);
   assert.match(DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT, /Markdown table/i);
-  assert.match(DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT, /Harness \/ acceptance check/i);
+  assert.match(DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT, /Verification check/i);
+  assert.doesNotMatch(DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT, /Harness/i);
   assert.match(DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT, /Provided|Suggested|Missing|Confirm/i);
 
   const simple = buildPromptOptimizationMessages({
@@ -210,11 +226,15 @@ test("prompt optimizer builds current-input-only requests for both formats", () 
       strictPlanning: DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT
     }
   });
-  assert.match(strict.messages[0].content, /goal|input materials|desired output|boundaries|technical route|verification harness/i);
+  assert.match(strict.messages[0].content, /goal|input materials|desired output|boundaries|technical route|verification method/i);
   assert.match(
     strict.messages[0].content,
-    /\| Area \| Current interpretation \| User needs to fill or confirm \| Harness \/ acceptance check \|/
+    /\| Area \| Current interpretation \| User needs to fill or confirm \| Verification check \|/
   );
+
+  const zhDefaults = getDefaultPromptWorkbenchOptimizerPrompts("zh");
+  assert.match(zhDefaults.simplePolish, /经验丰富的提示词工程师/);
+  assert.doesNotMatch(JSON.stringify(zhDefaults), /harness/i);
 });
 
 test("ChatGPT prompt workbench adapter follows the my-prompt style boundary strategy", () => {
@@ -286,6 +306,17 @@ test("prompt workbench content UI follows the same language setting as TurnMap s
   assert.match(i18nSource, /promptWorkbench\.content\.library/);
   assert.match(i18nSource, /promptWorkbench\.content\.optimize/);
   assert.match(i18nSource, /promptWorkbench\.content\.variables/);
+});
+
+test("prompt workbench panel positioning clamps to the viewport instead of being clipped", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/index.ts", import.meta.url), "utf8");
+
+  assert.match(source, /positionPanelNearAnchor/);
+  assert.match(source, /spaceAbove/);
+  assert.match(source, /spaceBelow/);
+  assert.match(source, /maxHeight/);
+  assert.match(source, /window\.innerHeight/);
+  assert.match(source, /Math\.min\(window\.innerWidth/);
 });
 
 test("prompt workbench is wired into content and settings surfaces with i18n", () => {

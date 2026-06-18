@@ -64,6 +64,7 @@ export type PromptWorkbenchImportOptions = {
   titleConflict?: "overwrite" | "skip";
   importSettings?: boolean;
   importOptimizerPrompts?: boolean;
+  locale?: PromptWorkbenchLocale;
   now?: number;
   idFactory?: IdFactory;
 };
@@ -80,6 +81,7 @@ export type PromptWorkbenchImportResult = {
 };
 
 type IdFactory = (prefix?: string) => string;
+export type PromptWorkbenchLocale = "en" | "zh";
 
 export const PROMPT_WORKBENCH_STORAGE_KEY = "turnmap.promptWorkbench";
 export const PROMPT_WORKBENCH_SCHEMA_VERSION = 1;
@@ -93,59 +95,140 @@ export const DEFAULT_PROMPT_WORKBENCH_SETTINGS: PromptWorkbenchSettings = {
 };
 
 export const DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT =
-  "You are an experienced prompt engineer and harness engineer. Rewrite only the user's current input into a clearer final prompt while preserving intent, language, constraints, and tone. Return only the improved prompt. Make the goal, input materials, output contract, boundaries, assumptions, technical route, acceptance checks, and verification harness explicit when they are implied. Do not invent unrelated requirements; mark uncertainty as something to confirm inside the prompt.";
+  "You are an experienced prompt engineer. Rewrite only the user's current input into a clearer final prompt while preserving intent, language, constraints, and tone. Return only the improved prompt. Make the goal, input materials, output contract, boundaries, assumptions, technical route, acceptance criteria, and verification method explicit when they are implied. Do not invent unrelated requirements; mark uncertainty as something to confirm inside the prompt.";
 
 export const DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT =
-  "You are an experienced prompt engineer and harness engineer. Analyze only the user's current input and return an English Markdown table with columns: | Area | Current interpretation | User needs to fill or confirm | Harness / acceptance check |. Cover goal, input materials, desired output, boundaries, assumptions, technical route, data/tools, acceptance criteria, verification harness, risks, and open questions. Mark each interpretation as Provided, Suggested, Missing, or Confirm. You may propose a direction, but never present inferred requirements as user-provided facts.";
+  "You are an experienced prompt engineer. Analyze only the user's current input and return an English Markdown table with columns: | Area | Current interpretation | User needs to fill or confirm | Verification check |. Cover goal, input materials, desired output, boundaries, assumptions, technical route, data/tools, acceptance criteria, verification method, risks, and open questions. Mark each interpretation as Provided, Suggested, Missing, or Confirm. You may propose a direction, but never present inferred requirements as user-provided facts.";
+
+const ZH_SIMPLE_POLISH_OPTIMIZER_PROMPT =
+  "你是一名经验丰富的提示词工程师。只改写用户当前输入，让它成为更清晰、可直接使用的最终提示词，同时保留原意、语言、约束和语气。只输出优化后的提示词。请在原文已有或明显暗示时，明确目标、输入材料、输出形式、边界、假设、技术路线、验收标准和验证方法。不要编造无关需求；不确定的内容写成需要确认的问题。";
+
+const ZH_STRICT_PLANNING_OPTIMIZER_PROMPT =
+  "你是一名经验丰富的提示词工程师。只分析用户当前输入，并返回中文 Markdown 表格，表头必须是：| 项目 | 当前判断 | 用户需要补充或确认 | 验证检查 |。覆盖目标、输入材料、期望输出、边界、假设、技术路线、数据/工具、验收标准、验证方法、风险和开放问题。每个当前判断都标注 Provided、Suggested、Missing 或 Confirm。你可以提出建议方向，但不要把推断内容当作用户已经给出的事实。";
 
 export const DEFAULT_OPTIMIZER_PROMPTS: PromptOptimizerPrompts = {
   simplePolish: DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT,
   strictPlanning: DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT
 };
 
-const EXAMPLE_PROMPTS: Array<Pick<PromptItem, "title" | "content" | "tags" | "note">> = [
-  {
-    title: "Translation",
-    content:
-      "Act as a careful translation harness engineer. Translate the input into {{language=English}}.\n\nInput:\n{{input}}\n\nOutput contract:\n- Preserve terminology, formatting, code blocks, links, tables, and proper nouns.\n- Keep ambiguous source terms in parentheses after the translation.\n- Do not summarize or add new claims.\n\nAcceptance checks:\n- Every source paragraph has a corresponding translated paragraph.\n- Code and quoted identifiers remain unchanged unless translation is explicitly needed.",
-    tags: ["translation", "harness"],
-    note: "Translate with preservation checks."
+const PROMPT_WORKBENCH_LANGUAGE_PACKS = {
+  en: {
+    examplesFolder: "Examples",
+    optimizerPrompts: DEFAULT_OPTIMIZER_PROMPTS,
+    prompts: [
+      {
+        key: "translation",
+        title: "Translation",
+        content:
+          "Act as a careful translator. Translate the input into {{language=English}}.\n\nInput:\n{{input}}\n\nOutput requirements:\n- Preserve terminology, formatting, code blocks, links, tables, and proper nouns.\n- Keep ambiguous source terms in parentheses after the translation.\n- Do not summarize or add new claims.\n\nQuality checks:\n- Every source paragraph has a corresponding translated paragraph.\n- Code and quoted identifiers remain unchanged unless translation is explicitly needed.",
+        tags: ["translation"],
+        note: "Translate with preservation checks."
+      },
+      {
+        key: "projectPlanning",
+        title: "Project planning",
+        content:
+          "Act as an experienced product manager and technical lead. Turn the following idea into an executable project plan.\n\nIdea:\n{{input}}\n\nReturn:\n1. Goal and non-goals.\n2. User workflows and module boundaries.\n3. Technical route and dependency assumptions.\n4. Milestones with deliverables.\n5. Risks and decision points.\n6. Acceptance criteria and validation steps for each critical workflow.\n\nDo not expand scope beyond the stated idea; list open questions separately.",
+        tags: ["planning"],
+        note: "Convert a rough idea into a validated plan."
+      },
+      {
+        key: "literatureSearch",
+        title: "Literature search",
+        content:
+          "Act as an academic research methodologist. Design a reproducible literature search plan for {{topic}}.\n\nReturn:\n- Research question and scope.\n- Keyword matrix with synonyms and Boolean query drafts.\n- Target databases and date/language limits.\n- Inclusion and exclusion criteria.\n- Screening workflow with duplicate handling.\n- Evidence extraction table fields.\n- Synthesis outline and quality checks.\n\nMake the process clear enough for another reviewer to rerun it.",
+        tags: ["research"],
+        note: "Prepare reproducible academic search strategy."
+      },
+      {
+        key: "documentFormatting",
+        title: "Document formatting",
+        content:
+          "Act as a document editor. Improve the structure and formatting of the document below while preserving the original meaning.\n\nDocument:\n{{input}}\n\nReturn an editable Markdown version plus a short formatting checklist covering headings, list hierarchy, table consistency, terminology consistency, and unresolved ambiguities. Do not remove important details.",
+        tags: ["writing"],
+        note: "Clean up document structure with checks."
+      },
+      {
+        key: "bugReproduction",
+        title: "Bug reproduction",
+        content:
+          "Act as a senior debugging partner. Convert this bug report into a reproducible investigation plan.\n\nBug report:\n{{input}}\n\nReturn:\n1. Environment and preconditions.\n2. Minimal reproduction steps.\n3. Expected result vs actual result.\n4. Suspected failure boundary and ranked hypotheses.\n5. Required logs, screenshots, or fixtures.\n6. Verification commands or browser steps.\n7. Regression test proposal that would fail before the fix and pass after it.",
+        tags: ["debug"],
+        note: "Make bug reports reproducible and testable."
+      }
+    ]
   },
-  {
-    title: "Project planning",
-    content:
-      "Act as an experienced product manager, technical lead, and harness engineer. Turn the following idea into an executable project plan.\n\nIdea:\n{{input}}\n\nReturn:\n1. Goal and non-goals.\n2. User workflows and module boundaries.\n3. Technical route and dependency assumptions.\n4. Milestones with deliverables.\n5. Risks and decision points.\n6. Acceptance tests and a minimal validation harness for each critical workflow.\n\nDo not expand scope beyond the stated idea; list open questions separately.",
-    tags: ["planning", "harness"],
-    note: "Convert a rough idea into a validated plan."
-  },
-  {
-    title: "Literature search",
-    content:
-      "Act as a research-methods harness engineer. Design a reproducible literature search plan for {{topic}}.\n\nReturn:\n- Research question and scope.\n- Keyword matrix with synonyms and Boolean query drafts.\n- Target databases and date/language limits.\n- Inclusion and exclusion criteria.\n- Screening workflow with duplicate handling.\n- Evidence extraction table fields.\n- Synthesis outline and quality checks.\n\nMake the process reproducible enough for another reviewer to rerun it.",
-    tags: ["research", "harness"],
-    note: "Prepare reproducible academic search strategy."
-  },
-  {
-    title: "Document formatting",
-    content:
-      "Act as a document-quality harness engineer. Improve the structure and formatting of the document below while preserving the original meaning.\n\nDocument:\n{{input}}\n\nReturn an editable Markdown version plus a short formatting checklist covering headings, list hierarchy, table consistency, terminology consistency, and unresolved ambiguities. Do not remove important details.",
-    tags: ["writing", "harness"],
-    note: "Clean up document structure with checks."
-  },
-  {
-    title: "Bug reproduction",
-    content:
-      "Act as a debugging harness engineer. Convert this bug report into a reproducible investigation plan.\n\nBug report:\n{{input}}\n\nReturn:\n1. Environment and preconditions.\n2. Minimal reproduction steps.\n3. Expected result vs actual result.\n4. Suspected failure boundary and ranked hypotheses.\n5. Required logs, screenshots, or fixtures.\n6. Verification commands or browser steps.\n7. Regression test proposal that would fail before the fix and pass after it.",
-    tags: ["debug", "harness"],
-    note: "Make bug reports reproducible and testable."
+  zh: {
+    examplesFolder: "示例",
+    optimizerPrompts: {
+      simplePolish: ZH_SIMPLE_POLISH_OPTIMIZER_PROMPT,
+      strictPlanning: ZH_STRICT_PLANNING_OPTIMIZER_PROMPT
+    },
+    prompts: [
+      {
+        key: "translation",
+        title: "翻译",
+        content:
+          "请作为严谨的译者，将输入内容翻译为 {{language=中文}}。\n\n输入：\n{{input}}\n\n输出要求：\n- 保留术语、格式、代码块、链接、表格和专有名词。\n- 对含义不确定的原文词语，在译文后用括号保留原词。\n- 不要总结，也不要添加新事实。\n\n质量检查：\n- 每个原文段落都有对应译文段落。\n- 代码和被引用的标识符保持不变，除非用户明确要求翻译。",
+        tags: ["翻译"],
+        note: "在保留格式和术语的前提下翻译。"
+      },
+      {
+        key: "projectPlanning",
+        title: "项目规划",
+        content:
+          "请作为经验丰富的产品经理和技术负责人，把下面的想法整理成可执行项目计划。\n\n想法：\n{{input}}\n\n请返回：\n1. 目标与非目标。\n2. 用户流程与模块边界。\n3. 技术路线与依赖假设。\n4. 里程碑和交付物。\n5. 风险与决策点。\n6. 每个关键流程的验收标准与验证步骤。\n\n不要扩大原始想法的范围；开放问题单独列出。",
+        tags: ["规划"],
+        note: "把粗略想法转换成可验证计划。"
+      },
+      {
+        key: "literatureSearch",
+        title: "文献检索",
+        content:
+          "请作为学术研究方法顾问，为 {{topic}} 设计一份可复现的文献检索方案。\n\n请返回：\n- 研究问题与范围。\n- 关键词矩阵，包括同义词和布尔检索式草案。\n- 目标数据库以及时间/语言限制。\n- 纳入与排除标准。\n- 筛选流程和重复文献处理方式。\n- 证据提取表字段。\n- 综合分析大纲与质量检查。\n\n方案要清晰到另一位研究者可以重复执行。",
+        tags: ["研究"],
+        note: "准备可复现的学术检索策略。"
+      },
+      {
+        key: "documentFormatting",
+        title: "文档排版优化",
+        content:
+          "请作为文档编辑，优化下面文档的结构和排版，同时保留原意。\n\n文档：\n{{input}}\n\n请返回可编辑的 Markdown 版本，并附上一份简短排版检查清单，覆盖标题层级、列表层级、表格一致性、术语一致性和仍需确认的歧义。不要删除重要细节。",
+        tags: ["写作"],
+        note: "清理文档结构并保留检查点。"
+      },
+      {
+        key: "bugReproduction",
+        title: "缺陷复现",
+        content:
+          "请作为资深调试伙伴，把这份 bug 报告转换成可复现的排查计划。\n\nBug 报告：\n{{input}}\n\n请返回：\n1. 环境与前置条件。\n2. 最小复现步骤。\n3. 预期结果与实际结果。\n4. 可疑故障边界与排序后的假设。\n5. 需要补充的日志、截图或 fixture。\n6. 验证命令或浏览器操作步骤。\n7. 一个回归测试建议，要求修复前失败、修复后通过。",
+        tags: ["调试"],
+        note: "把 bug 报告整理成可复现、可验证的排查方案。"
+      }
+    ]
   }
-];
+} satisfies Record<
+  PromptWorkbenchLocale,
+  {
+    examplesFolder: string;
+    optimizerPrompts: PromptOptimizerPrompts;
+    prompts: Array<Pick<PromptItem, "title" | "content" | "tags" | "note"> & { key: string }>;
+  }
+>;
+
+const EXAMPLE_PROMPTS = PROMPT_WORKBENCH_LANGUAGE_PACKS.en.prompts;
 
 const LEGACY_SIMPLE_POLISH_OPTIMIZER_PROMPT =
   "You are an experienced prompt engineer. Rewrite the user's current input into a clearer prompt while preserving their intent, language, constraints, and tone. Return only the final improved prompt. Clarify the goal, input materials, expected output, boundaries, priorities, and acceptance criteria when they are implied. Do not invent unrelated requirements.";
 
 const LEGACY_STRICT_PLANNING_OPTIMIZER_PROMPT =
   "You are an experienced prompt engineer and product-minded technical planner. Analyze only the user's current input. Return a Markdown table with columns: | 项目 | 当前判断 | 需要你补充/修改 |. Cover 目标, 输入材料, 期望输出, 边界限制, 技术路线, 验收标准, 风险点, 仍需确认. Mark each judgment as Provided, Suggested, Missing, or Confirm. You may suggest a direction, but never present inferred requirements as user-provided facts.";
+
+const HARNESS_SIMPLE_POLISH_OPTIMIZER_PROMPT =
+  "You are an experienced prompt engineer and harness engineer. Rewrite only the user's current input into a clearer final prompt while preserving intent, language, constraints, and tone. Return only the improved prompt. Make the goal, input materials, output contract, boundaries, assumptions, technical route, acceptance checks, and verification harness explicit when they are implied. Do not invent unrelated requirements; mark uncertainty as something to confirm inside the prompt.";
+
+const HARNESS_STRICT_PLANNING_OPTIMIZER_PROMPT =
+  "You are an experienced prompt engineer and harness engineer. Analyze only the user's current input and return an English Markdown table with columns: | Area | Current interpretation | User needs to fill or confirm | Harness / acceptance check |. Cover goal, input materials, desired output, boundaries, assumptions, technical route, data/tools, acceptance criteria, verification harness, risks, and open questions. Mark each interpretation as Provided, Suggested, Missing, or Confirm. You may propose a direction, but never present inferred requirements as user-provided facts.";
 
 const LEGACY_EXAMPLE_PROMPT_CONTENT_BY_TITLE = new Map<string, string>([
   [
@@ -170,7 +253,63 @@ const LEGACY_EXAMPLE_PROMPT_CONTENT_BY_TITLE = new Map<string, string>([
   ]
 ]);
 
-const EXAMPLE_PROMPT_BY_TITLE = new Map(EXAMPLE_PROMPTS.map((prompt) => [prompt.title, prompt]));
+const HARNESS_EXAMPLE_PROMPT_CONTENT_BY_TITLE = new Map<string, string>([
+  [
+    "Translation",
+    "Act as a careful translation harness engineer. Translate the input into {{language=English}}.\n\nInput:\n{{input}}\n\nOutput contract:\n- Preserve terminology, formatting, code blocks, links, tables, and proper nouns.\n- Keep ambiguous source terms in parentheses after the translation.\n- Do not summarize or add new claims.\n\nAcceptance checks:\n- Every source paragraph has a corresponding translated paragraph.\n- Code and quoted identifiers remain unchanged unless translation is explicitly needed."
+  ],
+  [
+    "Project planning",
+    "Act as an experienced product manager, technical lead, and harness engineer. Turn the following idea into an executable project plan.\n\nIdea:\n{{input}}\n\nReturn:\n1. Goal and non-goals.\n2. User workflows and module boundaries.\n3. Technical route and dependency assumptions.\n4. Milestones with deliverables.\n5. Risks and decision points.\n6. Acceptance tests and a minimal validation harness for each critical workflow.\n\nDo not expand scope beyond the stated idea; list open questions separately."
+  ],
+  [
+    "Literature search",
+    "Act as a research-methods harness engineer. Design a reproducible literature search plan for {{topic}}.\n\nReturn:\n- Research question and scope.\n- Keyword matrix with synonyms and Boolean query drafts.\n- Target databases and date/language limits.\n- Inclusion and exclusion criteria.\n- Screening workflow with duplicate handling.\n- Evidence extraction table fields.\n- Synthesis outline and quality checks.\n\nMake the process reproducible enough for another reviewer to rerun it."
+  ],
+  [
+    "Document formatting",
+    "Act as a document-quality harness engineer. Improve the structure and formatting of the document below while preserving the original meaning.\n\nDocument:\n{{input}}\n\nReturn an editable Markdown version plus a short formatting checklist covering headings, list hierarchy, table consistency, terminology consistency, and unresolved ambiguities. Do not remove important details."
+  ],
+  [
+    "Bug reproduction",
+    "Act as a debugging harness engineer. Convert this bug report into a reproducible investigation plan.\n\nBug report:\n{{input}}\n\nReturn:\n1. Environment and preconditions.\n2. Minimal reproduction steps.\n3. Expected result vs actual result.\n4. Suspected failure boundary and ranked hypotheses.\n5. Required logs, screenshots, or fixtures.\n6. Verification commands or browser steps.\n7. Regression test proposal that would fail before the fix and pass after it."
+  ]
+]);
+
+const BUILT_IN_PROMPT_KEY_BY_CONTENT = new Map<string, string>();
+
+for (const pack of Object.values(PROMPT_WORKBENCH_LANGUAGE_PACKS)) {
+  for (const prompt of pack.prompts) {
+    BUILT_IN_PROMPT_KEY_BY_CONTENT.set(prompt.content, prompt.key);
+  }
+}
+
+for (const [title, content] of LEGACY_EXAMPLE_PROMPT_CONTENT_BY_TITLE) {
+  const key = PROMPT_WORKBENCH_LANGUAGE_PACKS.en.prompts.find((prompt) => prompt.title === title)?.key;
+  if (key) BUILT_IN_PROMPT_KEY_BY_CONTENT.set(content, key);
+}
+
+for (const [title, content] of HARNESS_EXAMPLE_PROMPT_CONTENT_BY_TITLE) {
+  const key = PROMPT_WORKBENCH_LANGUAGE_PACKS.en.prompts.find((prompt) => prompt.title === title)?.key;
+  if (key) BUILT_IN_PROMPT_KEY_BY_CONTENT.set(content, key);
+}
+
+function normalizePromptWorkbenchLocale(locale?: PromptWorkbenchLocale): PromptWorkbenchLocale {
+  return locale === "zh" ? "zh" : "en";
+}
+
+function promptWorkbenchLanguagePack(locale?: PromptWorkbenchLocale) {
+  return PROMPT_WORKBENCH_LANGUAGE_PACKS[normalizePromptWorkbenchLocale(locale)];
+}
+
+export function promptWorkbenchLocaleFromLanguageMode(mode: string, browserLocale = globalThis.navigator?.language ?? "en"): PromptWorkbenchLocale {
+  if (mode === "zh" || (mode === "browser" && browserLocale.toLowerCase().startsWith("zh"))) return "zh";
+  return "en";
+}
+
+export function getDefaultPromptWorkbenchOptimizerPrompts(locale: PromptWorkbenchLocale = "en"): PromptOptimizerPrompts {
+  return { ...promptWorkbenchLanguagePack(locale).optimizerPrompts };
+}
 
 function nowOrDefault(now?: number): number {
   return typeof now === "number" && Number.isFinite(now) ? now : Date.now();
@@ -201,16 +340,19 @@ function normalizeTags(value: unknown): string[] {
   );
 }
 
-export function createDefaultPromptWorkbenchLibrary(options: { now?: number; idFactory?: IdFactory } = {}): PromptWorkbenchLibrary {
+export function createDefaultPromptWorkbenchLibrary(
+  options: { now?: number; idFactory?: IdFactory; locale?: PromptWorkbenchLocale } = {}
+): PromptWorkbenchLibrary {
   const timestamp = nowOrDefault(options.now);
+  const languagePack = promptWorkbenchLanguagePack(options.locale);
   const examplesFolder: PromptFolder = {
     id: makeId(options.idFactory, "fld"),
-    name: "Examples",
+    name: languagePack.examplesFolder,
     sortOrder: 0,
     createdAt: timestamp,
     updatedAt: timestamp
   };
-  const prompts = EXAMPLE_PROMPTS.map((prompt, index): PromptItem => ({
+  const prompts = languagePack.prompts.map((prompt, index): PromptItem => ({
     id: makeId(options.idFactory, "prm"),
     title: prompt.title,
     content: prompt.content,
@@ -231,7 +373,7 @@ export function createDefaultPromptWorkbenchLibrary(options: { now?: number; idF
     folders: [examplesFolder],
     prompts,
     settings: { ...DEFAULT_PROMPT_WORKBENCH_SETTINGS },
-    optimizerPrompts: { ...DEFAULT_OPTIMIZER_PROMPTS },
+    optimizerPrompts: getDefaultPromptWorkbenchOptimizerPrompts(options.locale),
     examplesSeeded: true
   };
 }
@@ -307,29 +449,49 @@ function normalizePrompt(
   };
 }
 
-export function normalizeOptimizerPrompts(value: unknown): PromptOptimizerPrompts {
+export function normalizeOptimizerPrompts(value: unknown, options: { locale?: PromptWorkbenchLocale } = {}): PromptOptimizerPrompts {
   const source = value && typeof value === "object" ? (value as Partial<PromptOptimizerPrompts>) : {};
+  const defaults = getDefaultPromptWorkbenchOptimizerPrompts(options.locale);
   return {
-    simplePolish: normalizeString(source.simplePolish) || DEFAULT_OPTIMIZER_PROMPTS.simplePolish,
-    strictPlanning: normalizeString(source.strictPlanning) || DEFAULT_OPTIMIZER_PROMPTS.strictPlanning
+    simplePolish: normalizeString(source.simplePolish) || defaults.simplePolish,
+    strictPlanning: normalizeString(source.strictPlanning) || defaults.strictPlanning
   };
 }
 
-function migrateBuiltInPromptContent(library: PromptWorkbenchLibrary, timestamp: number): PromptWorkbenchLibrary {
+function migrateBuiltInPromptContent(
+  library: PromptWorkbenchLibrary,
+  timestamp: number,
+  locale: PromptWorkbenchLocale = "en"
+): PromptWorkbenchLibrary {
+  const languagePack = promptWorkbenchLanguagePack(locale);
+  const optimizerDefaults = getDefaultPromptWorkbenchOptimizerPrompts(locale);
   const optimizerPrompts = { ...library.optimizerPrompts };
-  if (optimizerPrompts.simplePolish === LEGACY_SIMPLE_POLISH_OPTIMIZER_PROMPT) {
-    optimizerPrompts.simplePolish = DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT;
+  const knownSimplePolishPrompts = new Set([
+    LEGACY_SIMPLE_POLISH_OPTIMIZER_PROMPT,
+    HARNESS_SIMPLE_POLISH_OPTIMIZER_PROMPT,
+    PROMPT_WORKBENCH_LANGUAGE_PACKS.en.optimizerPrompts.simplePolish,
+    PROMPT_WORKBENCH_LANGUAGE_PACKS.zh.optimizerPrompts.simplePolish
+  ]);
+  const knownStrictPlanningPrompts = new Set([
+    LEGACY_STRICT_PLANNING_OPTIMIZER_PROMPT,
+    HARNESS_STRICT_PLANNING_OPTIMIZER_PROMPT,
+    PROMPT_WORKBENCH_LANGUAGE_PACKS.en.optimizerPrompts.strictPlanning,
+    PROMPT_WORKBENCH_LANGUAGE_PACKS.zh.optimizerPrompts.strictPlanning
+  ]);
+  if (knownSimplePolishPrompts.has(optimizerPrompts.simplePolish)) {
+    optimizerPrompts.simplePolish = optimizerDefaults.simplePolish;
   }
-  if (optimizerPrompts.strictPlanning === LEGACY_STRICT_PLANNING_OPTIMIZER_PROMPT) {
-    optimizerPrompts.strictPlanning = DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT;
+  if (knownStrictPlanningPrompts.has(optimizerPrompts.strictPlanning)) {
+    optimizerPrompts.strictPlanning = optimizerDefaults.strictPlanning;
   }
 
   const prompts = library.prompts.map((prompt) => {
-    const legacyContent = LEGACY_EXAMPLE_PROMPT_CONTENT_BY_TITLE.get(prompt.title);
-    const nextDefault = EXAMPLE_PROMPT_BY_TITLE.get(prompt.title);
-    if (!legacyContent || !nextDefault || prompt.content !== legacyContent) return prompt;
+    const key = BUILT_IN_PROMPT_KEY_BY_CONTENT.get(prompt.content);
+    const nextDefault = languagePack.prompts.find((item) => item.key === key);
+    if (!nextDefault) return prompt;
     return {
       ...prompt,
+      title: nextDefault.title,
       content: nextDefault.content,
       tags: nextDefault.tags,
       note: nextDefault.note,
@@ -337,16 +499,35 @@ function migrateBuiltInPromptContent(library: PromptWorkbenchLibrary, timestamp:
     };
   });
 
-  return { ...library, optimizerPrompts, prompts };
+  const knownFolderNames = new Set(Object.values(PROMPT_WORKBENCH_LANGUAGE_PACKS).map((pack) => pack.examplesFolder));
+  const folders = library.folders.map((folder) =>
+    knownFolderNames.has(folder.name)
+      ? {
+          ...folder,
+          name: languagePack.examplesFolder,
+          updatedAt: timestamp
+        }
+      : folder
+  );
+
+  return { ...library, folders, optimizerPrompts, prompts };
+}
+
+export function localizePromptWorkbenchLibrary(
+  library: PromptWorkbenchLibrary,
+  options: { now?: number; locale?: PromptWorkbenchLocale } = {}
+): PromptWorkbenchLibrary {
+  return migrateBuiltInPromptContent(library, nowOrDefault(options.now), normalizePromptWorkbenchLocale(options.locale));
 }
 
 export function normalizePromptWorkbenchLibrary(
   value: unknown,
-  options: { now?: number; idFactory?: IdFactory } = {}
+  options: { now?: number; idFactory?: IdFactory; locale?: PromptWorkbenchLocale } = {}
 ): PromptWorkbenchLibrary {
   const timestamp = nowOrDefault(options.now);
+  const locale = normalizePromptWorkbenchLocale(options.locale);
   if (!value || typeof value !== "object") {
-    return createDefaultPromptWorkbenchLibrary({ now: timestamp, idFactory: options.idFactory });
+    return createDefaultPromptWorkbenchLibrary({ now: timestamp, idFactory: options.idFactory, locale });
   }
   const source = value as Partial<PromptWorkbenchLibrary>;
   const folders = (Array.isArray(source.folders) ? source.folders : [])
@@ -364,7 +545,7 @@ export function normalizePromptWorkbenchLibrary(
 
   const defaultLibrary =
     folders.length === 0 && prompts.length === 0
-      ? createDefaultPromptWorkbenchLibrary({ now: timestamp, idFactory: options.idFactory })
+      ? createDefaultPromptWorkbenchLibrary({ now: timestamp, idFactory: options.idFactory, locale })
       : null;
   if (defaultLibrary) return defaultLibrary;
 
@@ -374,29 +555,33 @@ export function normalizePromptWorkbenchLibrary(
     folders,
     prompts,
     settings: normalizePromptWorkbenchSettings(source.settings),
-    optimizerPrompts: normalizeOptimizerPrompts(source.optimizerPrompts),
+    optimizerPrompts: normalizeOptimizerPrompts(source.optimizerPrompts, { locale }),
     examplesSeeded: Boolean(source.examplesSeeded)
     },
-    timestamp
+    timestamp,
+    locale
   );
 }
 
-export async function loadPromptWorkbenchLibrary(): Promise<PromptWorkbenchLibrary> {
+export async function loadPromptWorkbenchLibrary(options: { locale?: PromptWorkbenchLocale } = {}): Promise<PromptWorkbenchLibrary> {
   const result = await chrome.storage.local.get(PROMPT_WORKBENCH_STORAGE_KEY);
-  return normalizePromptWorkbenchLibrary(result[PROMPT_WORKBENCH_STORAGE_KEY]);
+  return normalizePromptWorkbenchLibrary(result[PROMPT_WORKBENCH_STORAGE_KEY], options);
 }
 
-export async function savePromptWorkbenchLibrary(library: PromptWorkbenchLibrary): Promise<void> {
+export async function savePromptWorkbenchLibrary(
+  library: PromptWorkbenchLibrary,
+  options: { locale?: PromptWorkbenchLocale } = {}
+): Promise<void> {
   await chrome.storage.local.set({
-    [PROMPT_WORKBENCH_STORAGE_KEY]: normalizePromptWorkbenchLibrary(library)
+    [PROMPT_WORKBENCH_STORAGE_KEY]: normalizePromptWorkbenchLibrary(library, options)
   });
 }
 
 export function exportPromptWorkbenchBackup(
   library: PromptWorkbenchLibrary,
-  options: { now?: number } = {}
+  options: { now?: number; locale?: PromptWorkbenchLocale } = {}
 ): PromptWorkbenchBackup {
-  const normalized = normalizePromptWorkbenchLibrary(library);
+  const normalized = normalizePromptWorkbenchLibrary(library, options);
   return {
     schemaVersion: PROMPT_WORKBENCH_SCHEMA_VERSION,
     app: "TurnMap",
@@ -442,7 +627,8 @@ export function importPromptWorkbenchBackup(
   }
 
   const timestamp = nowOrDefault(options.now);
-  const imported = normalizePromptWorkbenchLibrary(backup, { now: timestamp, idFactory: options.idFactory });
+  const locale = normalizePromptWorkbenchLocale(options.locale);
+  const imported = normalizePromptWorkbenchLibrary(backup, { now: timestamp, idFactory: options.idFactory, locale });
   if (options.mode === "replace") {
     return {
       library: {
@@ -455,7 +641,7 @@ export function importPromptWorkbenchBackup(
   }
 
   const titleConflict = options.titleConflict ?? "skip";
-  const library = normalizePromptWorkbenchLibrary(currentLibrary, { now: timestamp, idFactory: options.idFactory });
+  const library = normalizePromptWorkbenchLibrary(currentLibrary, { now: timestamp, idFactory: options.idFactory, locale });
   if (options.importSettings) library.settings = imported.settings;
   if (options.importOptimizerPrompts) library.optimizerPrompts = imported.optimizerPrompts;
 
@@ -501,5 +687,5 @@ export function importPromptWorkbenchBackup(
     summary.added += 1;
   }
 
-  return { library: normalizePromptWorkbenchLibrary(library, { now: timestamp, idFactory: options.idFactory }), summary };
+  return { library: normalizePromptWorkbenchLibrary(library, { now: timestamp, idFactory: options.idFactory, locale }), summary };
 }

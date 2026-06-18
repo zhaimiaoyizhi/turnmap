@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useI18n } from "../side-panel/i18n/useI18n";
 import {
-  DEFAULT_OPTIMIZER_PROMPTS,
+  getDefaultPromptWorkbenchOptimizerPrompts,
   exportPromptWorkbenchBackup,
   importPromptWorkbenchBackup,
+  localizePromptWorkbenchLibrary,
   loadPromptWorkbenchLibrary,
+  promptWorkbenchLocaleFromLanguageMode,
   savePromptWorkbenchLibrary,
   createPromptWorkbenchId,
   type PromptApplyMode,
@@ -89,7 +91,8 @@ function newFolder(sortOrder: number): PromptFolder {
 }
 
 export function PromptWorkbenchSettingsPanel({ onStatus }: PromptWorkbenchSettingsPanelProps) {
-  const { t } = useI18n();
+  const { mode, t } = useI18n();
+  const promptLocale = promptWorkbenchLocaleFromLanguageMode(mode);
   const [library, setLibrary] = useState<PromptWorkbenchLibrary | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -101,12 +104,16 @@ export function PromptWorkbenchSettingsPanel({ onStatus }: PromptWorkbenchSettin
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    void loadPromptWorkbenchLibrary().then((loaded) => {
+    void loadPromptWorkbenchLibrary({ locale: promptLocale }).then((loaded) => {
       setLibrary(loaded);
       setSelectedFolderId(loaded.folders[0]?.id ?? null);
       setSelectedPromptId(orderBySort(loaded.prompts)[0]?.id ?? null);
     });
   }, []);
+
+  useEffect(() => {
+    setLibrary((current) => (current ? localizePromptWorkbenchLibrary(current, { locale: promptLocale }) : current));
+  }, [promptLocale]);
 
   const selectedPrompt = useMemo(
     () => library?.prompts.find((prompt) => prompt.id === selectedPromptId) ?? null,
@@ -144,9 +151,9 @@ export function PromptWorkbenchSettingsPanel({ onStatus }: PromptWorkbenchSettin
 
   const save = useCallback(async () => {
     if (!library) return;
-    await savePromptWorkbenchLibrary(library);
+    await savePromptWorkbenchLibrary(library, { locale: promptLocale });
     onStatus(t("promptWorkbench.status.saved"));
-  }, [library, onStatus, t]);
+  }, [library, onStatus, promptLocale, t]);
 
   const addFolder = useCallback(() => {
     updateLibrary((current) => {
@@ -219,9 +226,9 @@ export function PromptWorkbenchSettingsPanel({ onStatus }: PromptWorkbenchSettin
 
   const exportBackup = useCallback(() => {
     if (!library) return;
-    downloadJson("turnmap-prompt-workbench.json", exportPromptWorkbenchBackup(library));
+    downloadJson("turnmap-prompt-workbench.json", exportPromptWorkbenchBackup(library, { locale: promptLocale }));
     onStatus(t("promptWorkbench.status.exported"));
-  }, [library, onStatus, t]);
+  }, [library, onStatus, promptLocale, t]);
 
   const importBackup = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -237,12 +244,13 @@ export function PromptWorkbenchSettingsPanel({ onStatus }: PromptWorkbenchSettin
           titleConflict: importMode === "merge-skip" ? "skip" : "overwrite",
           importSettings,
           importOptimizerPrompts,
+          locale: promptLocale,
           now: Date.now()
         });
         setLibrary(result.library);
         setSelectedPromptId(orderBySort(result.library.prompts)[0]?.id ?? null);
         setSelectedFolderId(result.library.folders[0]?.id ?? null);
-        await savePromptWorkbenchLibrary(result.library);
+        await savePromptWorkbenchLibrary(result.library, { locale: promptLocale });
         onStatus(
           t("promptWorkbench.status.imported", {
             added: result.summary.added,
@@ -254,7 +262,7 @@ export function PromptWorkbenchSettingsPanel({ onStatus }: PromptWorkbenchSettin
         onStatus(error instanceof Error ? error.message : t("promptWorkbench.status.importFailed"));
       }
     },
-    [importMode, importOptimizerPrompts, importSettings, library, onStatus, t]
+    [importMode, importOptimizerPrompts, importSettings, library, onStatus, promptLocale, t]
   );
 
   if (!library) {
@@ -546,7 +554,7 @@ export function PromptWorkbenchSettingsPanel({ onStatus }: PromptWorkbenchSettin
           onClick={() =>
             setLibrary({
               ...library,
-              optimizerPrompts: { ...DEFAULT_OPTIMIZER_PROMPTS }
+              optimizerPrompts: getDefaultPromptWorkbenchOptimizerPrompts(promptLocale)
             })
           }
         >
