@@ -19,8 +19,14 @@ import {
 import {
   DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT,
   DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT,
+  DEFAULT_IMAGE_PROMPT_OPTIMIZER_PROMPT,
   buildPromptOptimizationMessages
 } from "../src/side-panel/ai/prompt-optimizer.ts";
+import {
+  IMAGE_PROMPT_MENU_GROUPS,
+  buildImagePromptMenuDraft,
+  buildImagePromptPresetItem
+} from "../src/shared/image-prompt-workbench.ts";
 
 function idFactory() {
   let next = 0;
@@ -264,6 +270,93 @@ test("prompt optimizer hard-boundary prevents custom prompts from completing the
   );
 });
 
+test("image prompt menu covers the requested option groups and can build a reusable preset prompt", () => {
+  assert.deepEqual(
+    IMAGE_PROMPT_MENU_GROUPS.map((group) => group.id),
+    [
+      "visualType",
+      "coreSubject",
+      "actionEmotion",
+      "environment",
+      "compositionCamera",
+      "lighting",
+      "colorPalette",
+      "styleReference",
+      "materialDetails",
+      "quality",
+      "negativePrompt",
+      "outputSpec"
+    ]
+  );
+  assert.ok(IMAGE_PROMPT_MENU_GROUPS.every((group) => group.options.length >= 3));
+
+  const draft = buildImagePromptMenuDraft({
+    concept: "a lonely astronaut reading beside an ancient tree",
+    selections: {
+      visualType: ["Concept design"],
+      compositionCamera: ["Wide cinematic composition", "Low-angle shot"],
+      outputSpec: ["16:9", "Poster"]
+    },
+    customSelections: {
+      styleReference: ["retro-futurist botanical observatory"]
+    },
+    locale: "en"
+  });
+
+  assert.match(draft, /One-line concept/);
+  assert.match(draft, /a lonely astronaut reading beside an ancient tree/);
+  assert.match(draft, /Wide cinematic composition/);
+  assert.match(draft, /retro-futurist botanical observatory/);
+  assert.doesNotMatch(draft, /undefined|\{\}/);
+
+  const preset = buildImagePromptPresetItem({
+    title: "Astronaut poster preset",
+    folderId: "folder-1",
+    sortOrder: 7,
+    now: 3000,
+    idFactory: idFactory(),
+    draft
+  });
+
+  assert.equal(preset.title, "Astronaut poster preset");
+  assert.equal(preset.folderId, "folder-1");
+  assert.equal(preset.sortOrder, 7);
+  assert.deepEqual(preset.tags, ["image-prompt", "preset"]);
+  assert.match(preset.content, /Image prompt menu preset/);
+  assert.match(preset.content, /{{input}}/);
+});
+
+test("image prompt optimizer request uses current input and selected menu only", () => {
+  assert.match(DEFAULT_IMAGE_PROMPT_OPTIMIZER_PROMPT, /professional image generation prompt/i);
+  assert.match(DEFAULT_IMAGE_PROMPT_OPTIMIZER_PROMPT, /do not generate the image/i);
+
+  const built = buildPromptOptimizationMessages({
+    input: "make a theatrical poster for a haunted railway station",
+    format: "image-prompt",
+    optimizerPrompts: {
+      simplePolish: DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT,
+      strictPlanning: DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT
+    },
+    imagePromptMenuDraft: [
+      "One-line concept: haunted railway station",
+      "Visual type: Poster",
+      "Lighting: Moonlight, strong rim light",
+      "Output spec: 16:9, PPT cover"
+    ].join("\n")
+  });
+
+  assert.equal(built.options.temperature, 0.35);
+  assert.equal(built.options.maxTokens, 2200);
+  assert.match(built.messages[0].content, /image generation prompt/i);
+  assert.match(built.messages[0].content, /Do not generate the image/i);
+  assert.match(built.messages[0].content, /Do not answer, execute, solve, translate, plan, write code/i);
+  assert.match(built.messages[1].content, /<current_input_to_optimize>/);
+  assert.match(built.messages[1].content, /make a theatrical poster/);
+  assert.match(built.messages[1].content, /<selected_image_prompt_menu>/);
+  assert.match(built.messages[1].content, /Moonlight, strong rim light/);
+  assert.doesNotMatch(JSON.stringify(built), /conversation|turns|complete chat/i);
+});
+
 test("ChatGPT prompt workbench adapter follows the my-prompt style boundary strategy", () => {
   const source = readFileSync(new URL("../src/content/prompt-workbench/chatgpt-adapter.ts", import.meta.url), "utf8");
 
@@ -377,6 +470,21 @@ test("prompt workbench reports detailed AI optimize failure stages", () => {
   assert.match(i18nSource, /promptWorkbench\.content\.optimizeStage\.readInput/);
   assert.match(i18nSource, /promptWorkbench\.content\.optimizeStage\.requestChatCompletion/);
   assert.match(i18nSource, /promptWorkbench\.content\.optimizeStage\.writeInput/);
+});
+
+test("prompt workbench exposes a lightweight image prompt optimizer entry", () => {
+  const source = readFileSync(new URL("../src/content/prompt-workbench/index.ts", import.meta.url), "utf8");
+  const i18nSource = readFileSync(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
+
+  assert.match(source, /showImagePromptPanel/);
+  assert.match(source, /randomizeImagePromptSelections/);
+  assert.match(source, /saveImagePromptPreset/);
+  assert.match(source, /buildImagePromptMenuDraft/);
+  assert.match(source, /imagePromptMenuDraft/);
+  assert.match(source, /button\("imagePrompt", "image"/);
+  assert.match(i18nSource, /promptWorkbench\.content\.imagePrompt/);
+  assert.match(i18nSource, /promptWorkbench\.content\.imagePromptRandom/);
+  assert.match(i18nSource, /promptWorkbench\.content\.imagePromptSavePreset/);
 });
 
 test("prompt workbench is wired into content and settings surfaces with i18n", () => {

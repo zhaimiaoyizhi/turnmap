@@ -4,11 +4,18 @@ import {
   localizePromptWorkbenchLibrary,
   promptWorkbenchLocaleFromLanguageMode,
   savePromptWorkbenchLibrary,
+  createPromptWorkbenchId,
   type PromptApplyMode,
   type PromptItem,
   type PromptWorkbenchLocale,
   type PromptWorkbenchLibrary
 } from "../../shared/prompt-workbench-storage";
+import {
+  IMAGE_PROMPT_MENU_GROUPS,
+  buildImagePromptMenuDraft,
+  buildImagePromptPresetItem,
+  type ImagePromptMenuGroupId
+} from "../../shared/image-prompt-workbench";
 import {
   applySelectionWrapFallback,
   extractPromptTemplateVariables,
@@ -33,13 +40,14 @@ import {
   type TranslationMap
 } from "../../side-panel/i18n/i18n-storage";
 
-type WorkbenchView = "actions" | "library" | "variables" | "optimize" | "apply";
+type WorkbenchView = "actions" | "library" | "variables" | "optimize" | "imagePrompt" | "apply";
 
 const adapter = new ChatGPTPromptWorkbenchAdapter();
 const PROMPT_WORKBENCH_CONTENT_I18N_KEYS = {
   launcher: "promptWorkbench.aria.launcher",
   library: "promptWorkbench.content.library",
   optimize: "promptWorkbench.content.optimize",
+  imagePrompt: "promptWorkbench.content.imagePrompt",
   variables: "promptWorkbench.content.variables",
   manage: "promptWorkbench.content.manage",
   selectedText: "promptWorkbench.content.selectedText",
@@ -64,7 +72,14 @@ const PROMPT_WORKBENCH_CONTENT_I18N_KEYS = {
   optimizeStageWriteInput: "promptWorkbench.content.optimizeStage.writeInput",
   optimizeFailureHint: "promptWorkbench.content.optimizeFailureHint",
   openAiSettings: "promptWorkbench.content.openAiSettings",
-  copy: "promptWorkbench.content.copy"
+  copy: "promptWorkbench.content.copy",
+  imagePromptConcept: "promptWorkbench.content.imagePromptConcept",
+  imagePromptCustom: "promptWorkbench.content.imagePromptCustom",
+  imagePromptAddCustom: "promptWorkbench.content.imagePromptAddCustom",
+  imagePromptRandom: "promptWorkbench.content.imagePromptRandom",
+  imagePromptGenerate: "promptWorkbench.content.imagePromptGenerate",
+  imagePromptSavePreset: "promptWorkbench.content.imagePromptSavePreset",
+  imagePromptPresetSaved: "promptWorkbench.content.imagePromptPresetSaved"
 } satisfies Record<string, I18nKey>;
 
 type PromptWorkbenchContentLabel = keyof typeof PROMPT_WORKBENCH_CONTENT_I18N_KEYS;
@@ -81,17 +96,22 @@ let libraryCache: PromptWorkbenchLibrary | null = null;
 let activePrompt: PromptItem | null = null;
 let activeVariables: PromptTemplateVariable[] = [];
 let pendingRenderedPrompt = "";
+let imagePromptPresetSavedMessage = "";
 let initializationScheduled = false;
 let i18nSyncStarted = false;
 let toolbarCloseTimer: number | null = null;
 
-function icon(name: "library" | "sparkles" | "braces" | "settings" | "launcher" | "copy" | "insert" | "replace"): string {
+function icon(
+  name: "library" | "sparkles" | "image" | "braces" | "settings" | "launcher" | "copy" | "insert" | "replace"
+): string {
   const icons = {
     launcher:
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5Z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8Z"/></svg>',
     library: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 1 4 17.5Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>',
     sparkles:
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5Z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8Z"/></svg>',
+    image:
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 16l-5.2-5.2a2 2 0 0 0-2.8 0L5 18"/></svg>',
     braces: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H7a3 3 0 0 0-3 3v2a2 2 0 0 1-2 2 2 2 0 0 1 2 2v2a3 3 0 0 0 3 3h1"/><path d="M16 4h1a3 3 0 0 1 3 3v2a2 2 0 0 0 2 2 2 2 0 0 0-2 2v2a3 3 0 0 1-3 3h-1"/></svg>',
     settings:
       '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7.7 7.7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7.1 7.1 0 0 0-1.8-1L14.4 3h-4.8l-.4 3.1a7.1 7.1 0 0 0-1.8 1l-2.4-1-2 3.4L5 11a7.7 7.7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7.1 7.1 0 0 0 1.8 1l.4 3.1h4.8l.4-3.1a7.1 7.1 0 0 0 1.8-1l2.4 1 2-3.4-2-1.5Z"/></svg>',
@@ -378,6 +398,40 @@ function ensureStyle(): void {
       padding: 8px;
       white-space: pre-wrap;
     }
+    .turnmap-prompt-image-group {
+      border-top: 1px solid rgba(125, 132, 150, 0.16);
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+    .turnmap-prompt-image-group strong {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .turnmap-prompt-image-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .turnmap-prompt-image-option {
+      align-items: center;
+      background: rgba(125, 132, 150, 0.09);
+      border: 1px solid rgba(125, 132, 150, 0.2);
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-flex;
+      font-size: 11px;
+      gap: 4px;
+      line-height: 1.2;
+      padding: 4px 7px;
+    }
+    .turnmap-prompt-image-option input {
+      accent-color: #6d5dfc;
+      height: 12px;
+      margin: 0;
+      padding: 0;
+      width: 12px;
+    }
   `;
   document.documentElement.append(style);
 }
@@ -530,6 +584,7 @@ function showToolbar(): void {
   toolbar.append(
     button("library", "library", () => void showLibraryPanel()),
     button("optimize", "sparkles", () => void showOptimizePanel()),
+    button("imagePrompt", "image", () => void showImagePromptPanel()),
     button("variables", "braces", () => showVariablesPanel()),
     button("manage", "settings", openPromptWorkbenchSettings)
   );
@@ -758,6 +813,191 @@ function showVariablesPanel(missingVariables: string[] = []): void {
     void applyPrompt(activePrompt!, values);
   });
   renderPreview();
+}
+
+function selectedImagePromptValues(root: HTMLElement): Record<ImagePromptMenuGroupId, string[]> {
+  const selections = {} as Record<ImagePromptMenuGroupId, string[]>;
+  for (const group of IMAGE_PROMPT_MENU_GROUPS) {
+    const checked = Array.from(root.querySelectorAll<HTMLInputElement>(`input[data-image-group="${group.id}"]:checked`)).map(
+      (input) => input.value
+    );
+    selections[group.id] = checked;
+  }
+  return selections;
+}
+
+function customImagePromptValues(root: HTMLElement): Partial<Record<ImagePromptMenuGroupId, string[]>> {
+  const selections: Partial<Record<ImagePromptMenuGroupId, string[]>> = {};
+  for (const group of IMAGE_PROMPT_MENU_GROUPS) {
+    const values = Array.from(root.querySelectorAll<HTMLElement>(`[data-custom-image-group="${group.id}"] span`))
+      .map((element) => element.textContent?.trim() ?? "")
+      .filter(Boolean);
+    if (values.length > 0) selections[group.id] = values;
+  }
+  return selections;
+}
+
+function currentImagePromptDraft(root: HTMLElement): string {
+  const concept = root.querySelector<HTMLTextAreaElement>("[data-image-concept]")?.value ?? "";
+  return buildImagePromptMenuDraft({
+    concept,
+    selections: selectedImagePromptValues(root),
+    customSelections: customImagePromptValues(root),
+    locale: promptWorkbenchLocale
+  });
+}
+
+function randomizeImagePromptSelections(root: HTMLElement): void {
+  for (const group of IMAGE_PROMPT_MENU_GROUPS) {
+    const inputs = Array.from(root.querySelectorAll<HTMLInputElement>(`input[data-image-group="${group.id}"]`));
+    inputs.forEach((input) => {
+      input.checked = false;
+    });
+    const shuffled = [...inputs].sort(() => Math.random() - 0.5);
+    const count = group.multiple ? Math.min(2, Math.max(1, Math.floor(Math.random() * 3))) : 1;
+    shuffled.slice(0, count).forEach((input) => {
+      input.checked = true;
+    });
+  }
+}
+
+function addCustomImagePromptSelection(root: HTMLElement, groupId: ImagePromptMenuGroupId): void {
+  const input = root.querySelector<HTMLInputElement>(`input[data-image-custom-input="${groupId}"]`);
+  const list = root.querySelector<HTMLElement>(`[data-custom-image-group="${groupId}"]`);
+  const value = input?.value.trim();
+  if (!input || !list || !value) return;
+  const chip = document.createElement("span");
+  chip.textContent = value;
+  list.append(chip);
+  input.value = "";
+  repositionPanel();
+}
+
+async function saveImagePromptPreset(root: HTMLElement): Promise<void> {
+  const draft = currentImagePromptDraft(root);
+  const library = libraryCache ?? (await loadLibrary());
+  const folderName = promptWorkbenchLocale === "zh" ? "生图提示词" : "Image prompts";
+  let folder = library.folders.find((item) => item.name.toLowerCase() === folderName.toLowerCase());
+  const now = Date.now();
+  if (!folder) {
+    folder = {
+      id: createPromptWorkbenchId("fld"),
+      name: folderName,
+      sortOrder: library.folders.length,
+      createdAt: now,
+      updatedAt: now
+    };
+    library.folders.push(folder);
+  }
+  const concept = root.querySelector<HTMLTextAreaElement>("[data-image-concept]")?.value.trim() ?? "";
+  const preset = buildImagePromptPresetItem({
+    title: compact(concept || label("imagePrompt"), 48),
+    folderId: folder.id,
+    sortOrder: library.prompts.length,
+    now,
+    draft
+  });
+  library.prompts.push(preset);
+  await savePromptWorkbenchLibrary(library, { locale: promptWorkbenchLocale });
+  libraryCache = library;
+  imagePromptPresetSavedMessage = label("imagePromptPresetSaved");
+  const status = root.querySelector<HTMLElement>("[data-image-status]");
+  if (status) status.textContent = imagePromptPresetSavedMessage;
+}
+
+async function showImagePromptPanel(): Promise<void> {
+  const target = adapter.findEditor();
+  const root = ensurePanel("imagePrompt");
+  if (!target) {
+    root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("inputMissing"))}</p>`;
+    repositionPanel();
+    return;
+  }
+
+  let input = "";
+  try {
+    input = adapter.readInput(target).text.trim();
+  } catch (error) {
+    renderOptimizeFailure(root, "readInput", error);
+    return;
+  }
+
+  root.innerHTML = `
+    <strong>${escapeHtml(label("imagePrompt"))}</strong>
+    <p class="turnmap-prompt-panel__hint">${escapeHtml(label("imagePromptConcept"))}</p>
+    <textarea data-image-concept>${escapeHtml(input)}</textarea>
+    <div data-image-groups></div>
+    <p class="turnmap-prompt-panel__hint" data-image-status></p>
+    <div class="turnmap-prompt-panel__row">
+      <button type="button" data-random>${icon("sparkles")}<span>${escapeHtml(label("imagePromptRandom"))}</span></button>
+      <button type="button" data-save-preset>${icon("library")}<span>${escapeHtml(label("imagePromptSavePreset"))}</span></button>
+      <button type="button" data-generate>${icon("image")}<span>${escapeHtml(label("imagePromptGenerate"))}</span></button>
+    </div>
+  `;
+
+  const groups = root.querySelector<HTMLElement>("[data-image-groups]");
+  for (const group of IMAGE_PROMPT_MENU_GROUPS) {
+    const section = document.createElement("section");
+    section.className = "turnmap-prompt-image-group";
+    const title = group.title[promptWorkbenchLocale];
+    section.innerHTML = `
+      <strong>${escapeHtml(title)}</strong>
+      <div class="turnmap-prompt-image-options">
+        ${group.options
+          .map((option) => {
+            const value = option[promptWorkbenchLocale];
+            return `<label class="turnmap-prompt-image-option"><input type="checkbox" data-image-group="${group.id}" value="${escapeHtml(
+              value
+            )}" />${escapeHtml(value)}</label>`;
+          })
+          .join("")}
+      </div>
+      <div class="turnmap-prompt-panel__row">
+        <input data-image-custom-input="${group.id}" placeholder="${escapeHtml(label("imagePromptCustom"))}" />
+        <button type="button" data-add-custom="${group.id}" aria-label="${escapeHtml(label("imagePromptAddCustom"))}">${icon(
+          "insert"
+        )}</button>
+      </div>
+      <div class="turnmap-prompt-panel__tags" data-custom-image-group="${group.id}"></div>
+    `;
+    groups?.append(section);
+  }
+  repositionPanel();
+
+  root.querySelectorAll<HTMLButtonElement>("[data-add-custom]").forEach((button) => {
+    button.addEventListener("click", () => addCustomImagePromptSelection(root, button.dataset.addCustom as ImagePromptMenuGroupId));
+  });
+  root.querySelector<HTMLButtonElement>("[data-random]")?.addEventListener("click", () => {
+    randomizeImagePromptSelections(root);
+  });
+  root.querySelector<HTMLButtonElement>("[data-save-preset]")?.addEventListener("click", () => {
+    void saveImagePromptPreset(root);
+  });
+  root.querySelector<HTMLButtonElement>("[data-generate]")?.addEventListener("click", async () => {
+    const currentTarget = adapter.findEditor();
+    if (!currentTarget) {
+      root.innerHTML = `<p class="turnmap-prompt-panel__hint">${escapeHtml(label("inputMissing"))}</p>`;
+      return;
+    }
+    const currentInput = adapter.readInput(currentTarget).text.trim() || root.querySelector<HTMLTextAreaElement>("[data-image-concept]")?.value.trim() || "";
+    if (!currentInput) {
+      root.querySelector<HTMLElement>("[data-image-status]")!.textContent = label("writeSomething");
+      return;
+    }
+    const library = await loadLibrary();
+    root.querySelector<HTMLElement>("[data-image-status]")!.textContent = label("optimizing");
+    try {
+      const result = await optimizePromptInput({
+        input: currentInput,
+        format: "image-prompt",
+        optimizerPrompts: library.optimizerPrompts,
+        imagePromptMenuDraft: currentImagePromptDraft(root)
+      });
+      if (writeOptimizedPrompt(root, currentTarget, result, "replace")) removeSurfaces();
+    } catch (error) {
+      renderOptimizeFailure(root, "requestChatCompletion", error);
+    }
+  });
 }
 
 async function showOptimizePanel(): Promise<void> {

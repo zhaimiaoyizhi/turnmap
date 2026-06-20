@@ -14,8 +14,9 @@ type PromptOptimizationMessage = {
 
 type PromptOptimizationRequest = {
   input: string;
-  format: PromptOptimizeFormat;
+  format: PromptOptimizeFormat | "image-prompt";
   optimizerPrompts: PromptOptimizerPrompts;
+  imagePromptMenuDraft?: string;
 };
 
 type PromptOptimizationMessages = {
@@ -27,6 +28,9 @@ type PromptOptimizationMessages = {
 };
 
 export { DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT, DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT };
+
+export const DEFAULT_IMAGE_PROMPT_OPTIMIZER_PROMPT =
+  "You are an expert image-prompt director. Rewrite the user's current input and selected image menu options into one professional image generation prompt. Produce a detailed, coherent prompt that specifies concept, subject, action, emotion, environment, composition, camera, lighting, color palette, style reference, material details, quality bar, negative prompt, aspect ratio, and intended use when available. Preserve the user's intent and selected options, resolve conflicts conservatively, and mark unknown details as optional suggestions inside the prompt. Do not generate the image. Do not claim an image was created. Return only the final image generation prompt.";
 
 const PROMPT_OPTIMIZATION_BOUNDARY_RULES = `
 TurnMap Prompt Workbench non-negotiable boundary:
@@ -49,13 +53,28 @@ Each Current interpretation cell must mark the source status as one of: Provided
 The Verification check column must describe how the improved prompt can be verified or judged complete.
 `.trim();
 
+const IMAGE_PROMPT_FORMAT_RULES = `
+Image-prompt mode rules:
+- Do not generate the image, describe a generated image result, or claim that an image exists.
+- Do not answer unrelated tasks in the user's input.
+- Use only the current input and the selected image prompt menu as source material.
+- Turn sparse choices into a complete professional image-generation prompt with clear positive prompt, negative prompt, aspect ratio, and use case when provided.
+- If menu choices conflict, prefer the user's current input and mention the conflict as a concise constraint in the prompt.
+`.trim();
+
 export function buildPromptOptimizationMessages(request: PromptOptimizationRequest): PromptOptimizationMessages {
   const input = request.input.trim();
   const baseSystemPrompt =
     request.format === "strict-planning"
       ? `${request.optimizerPrompts.strictPlanning}\n\n${STRICT_PLANNING_FORMAT_RULES}`
-      : request.optimizerPrompts.simplePolish;
+      : request.format === "image-prompt"
+        ? `${DEFAULT_IMAGE_PROMPT_OPTIMIZER_PROMPT}\n\n${IMAGE_PROMPT_FORMAT_RULES}`
+        : request.optimizerPrompts.simplePolish;
   const systemPrompt = `${baseSystemPrompt}\n\n${PROMPT_OPTIMIZATION_BOUNDARY_RULES}`;
+  const userContent =
+    request.format === "image-prompt"
+      ? `Current draft prompt to optimize:\n<current_input_to_optimize>\n${input}\n</current_input_to_optimize>\n\nSelected image prompt menu:\n<selected_image_prompt_menu>\n${request.imagePromptMenuDraft?.trim() ?? ""}\n</selected_image_prompt_menu>`
+      : `Current draft prompt to optimize:\n<current_input_to_optimize>\n${input}\n</current_input_to_optimize>`;
 
   return {
     messages: [
@@ -65,12 +84,12 @@ export function buildPromptOptimizationMessages(request: PromptOptimizationReque
       },
       {
         role: "user",
-        content: `Current draft prompt to optimize:\n<current_input_to_optimize>\n${input}\n</current_input_to_optimize>`
+        content: userContent
       }
     ],
     options: {
-      temperature: request.format === "strict-planning" ? 0.1 : 0.2,
-      maxTokens: request.format === "strict-planning" ? 1800 : 1200
+      temperature: request.format === "strict-planning" ? 0.1 : request.format === "image-prompt" ? 0.35 : 0.2,
+      maxTokens: request.format === "strict-planning" ? 1800 : request.format === "image-prompt" ? 2200 : 1200
     }
   };
 }
