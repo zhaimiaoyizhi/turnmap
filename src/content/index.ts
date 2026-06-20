@@ -25,7 +25,7 @@ function isContentMessage(message: unknown): message is JumpToTurnMessage | { ty
 
 function broadcastTurns(message: ExtractedTurnsMessage): void {
   floatingTurns = mergeFloatingTurns(floatingTurns, message.turns);
-  renderFloatingPanel();
+  renderFloatingNavigator();
   chrome.runtime.sendMessage(message).catch(() => {
     // Side panel may be closed. The next explicit request will fetch current turns.
   });
@@ -52,11 +52,15 @@ function toUnsupportedTurnsMessage(): ExtractedTurnsMessage {
 
 let floatingPanel: HTMLElement | null = null;
 let launcherButton: HTMLButtonElement | null = null;
-let floatingCollapsed = false;
 let floatingTurns: Turn[] = [];
-let floatingDragCleanup: (() => void) | null = null;
 let launcherMovedDuringPointer = false;
 let floatingThemeSetting: FloatingThemeMode = "browser";
+let floatingNavigatorEnabled = false;
+let floatingNavigatorOpenTimer: number | null = null;
+let floatingNavigatorCloseTimer: number | null = null;
+
+const FLOATING_NAVIGATOR_HOVER_DELAY_MS = 400;
+const FLOATING_NAVIGATOR_CLOSE_DELAY_MS = 200;
 
 type FloatingThemeMode = "browser" | "day" | "night" | "eye-care";
 
@@ -67,10 +71,6 @@ type FloatingPosition = {
 
 function floatingPanelEnabledKey(): string {
   return "turnmap.floatingPanel.enabled";
-}
-
-function floatingPanelPositionKey(): string {
-  return "turnmap.floatingPanel.position";
 }
 
 function themeStorageKey(): string {
@@ -86,13 +86,14 @@ function launcherPositionKey(): string {
 }
 
 function removeFloatingPanel(): void {
-  floatingDragCleanup?.();
-  floatingDragCleanup = null;
+  cancelFloatingNavigatorOpen();
+  cancelFloatingNavigatorClose();
   floatingPanel?.remove();
   floatingPanel = null;
 }
 
 function removeLauncher(): void {
+  removeFloatingPanel();
   launcherButton?.remove();
   launcherButton = null;
 }
@@ -119,6 +120,60 @@ function loadFloatingTheme(): void {
   });
 }
 
+function canShowFloatingNavigator(): boolean {
+  return Boolean(floatingNavigatorEnabled && activeAdapter?.site.id === "chatgpt" && launcherButton && !launcherMovedDuringPointer);
+}
+
+function cancelFloatingNavigatorOpen(): void {
+  if (floatingNavigatorOpenTimer === null) return;
+  window.clearTimeout(floatingNavigatorOpenTimer);
+  floatingNavigatorOpenTimer = null;
+}
+
+function cancelFloatingNavigatorClose(): void {
+  if (floatingNavigatorCloseTimer === null) return;
+  window.clearTimeout(floatingNavigatorCloseTimer);
+  floatingNavigatorCloseTimer = null;
+}
+
+function scheduleFloatingNavigatorOpen(): void {
+  if (!canShowFloatingNavigator()) return;
+  cancelFloatingNavigatorClose();
+  cancelFloatingNavigatorOpen();
+  floatingNavigatorOpenTimer = window.setTimeout(() => {
+    floatingNavigatorOpenTimer = null;
+    if (!canShowFloatingNavigator()) return;
+    floatingTurns = activeAdapter?.getLatestTurns() ?? floatingTurns;
+    ensureFloatingPanel();
+  }, FLOATING_NAVIGATOR_HOVER_DELAY_MS);
+}
+
+function scheduleFloatingNavigatorClose(): void {
+  cancelFloatingNavigatorOpen();
+  cancelFloatingNavigatorClose();
+  floatingNavigatorCloseTimer = window.setTimeout(() => {
+    floatingNavigatorCloseTimer = null;
+    removeFloatingPanel();
+  }, FLOATING_NAVIGATOR_CLOSE_DELAY_MS);
+}
+
+function positionFloatingNavigatorNearLauncher(): void {
+  if (!floatingPanel || !launcherButton) return;
+  const margin = 8;
+  const launcherRect = launcherButton.getBoundingClientRect();
+  const width = floatingPanel.offsetWidth || 320;
+  const height = Math.min(floatingPanel.offsetHeight || 360, window.innerHeight * 0.6);
+  const rightLeft = launcherRect.right + 8;
+  const leftLeft = launcherRect.left - width - 8;
+  const left = rightLeft + width <= window.innerWidth - margin ? rightLeft : Math.max(margin, leftLeft);
+  const top = Math.max(margin, Math.min(window.innerHeight - height - margin, launcherRect.top + launcherRect.height / 2 - height / 2));
+
+  floatingPanel.style.left = `${left}px`;
+  floatingPanel.style.top = `${top}px`;
+  floatingPanel.style.right = "auto";
+  floatingPanel.style.bottom = "auto";
+}
+
 function performJumpToTurn(message: JumpToTurnMessage): Promise<unknown> {
   const adapter = getCurrentAdapter();
   if (!adapter) {
@@ -142,59 +197,78 @@ function mergeFloatingTurns(existingTurns: Turn[], incomingTurns: Turn[]): Turn[
   return merged.length >= existingTurns.length ? merged : existingTurns;
 }
 
-function renderFloatingPanel(): void {
+function getVisibleChatGptTurnIndex(): number | null {
+  const users = Array.from(document.querySelectorAll<HTMLElement>('[data-message-author-role="user"]')).filter((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.top <= window.innerHeight;
+  });
+  if (users.length === 0) return null;
+
+  const viewportCenter = window.innerHeight / 2;
+  const visible = users
+    .map((element, visibleIndex) => {
+      const rect = element.getBoundingClientRect();
+      const message = element.closest<HTMLElement>("[data-message-id]") ?? element.querySelector<HTMLElement>("[data-message-id]");
+      const turn =
+        element.closest<HTMLElement>("[data-turn-id], [data-turn-id-container], [data-testid^='conversation-turn']") ??
+        element.querySelector<HTMLElement>("[data-turn-id], [data-turn-id-container], [data-testid^='conversation-turn']");
+      const messageId = message?.getAttribute("data-message-id") ?? null;
+      const turnId =
+        turn?.getAttribute("data-turn-id") ??
+        turn?.getAttribute("data-turn-id-container") ??
+        turn?.getAttribute("data-testid") ??
+        null;
+      return {
+        visibleIndex,
+        messageId,
+        turnId,
+        distance: Math.abs(rect.top + rect.height / 2 - viewportCenter)
+      };
+    })
+    .sort((left, right) => left.distance - right.distance)[0];
+
+  if (!visible) return null;
+
+  const byIdentity = floatingTurns.find((turn) => {
+    const navigation = turn.navigation;
+    return (
+      (visible.messageId && (navigation?.messageId === visible.messageId || turn.sourceAnchor.userMessageId === visible.messageId)) ||
+      (visible.turnId && navigation?.turnId === visible.turnId)
+    );
+  });
+  if (byIdentity) return byIdentity.turnIndex;
+
+  return floatingTurns[visible.visibleIndex]?.turnIndex ?? null;
+}
+
+function renderFloatingNavigator(): void {
   if (!floatingPanel) return;
   const previousList = floatingPanel.querySelector<HTMLElement>(".turnmap-floating-list");
   const previousScrollTop = previousList?.scrollTop ?? 0;
   const previousWasNearBottom = previousList
     ? previousList.scrollTop + previousList.clientHeight >= previousList.scrollHeight - 16
     : false;
-  floatingDragCleanup?.();
-  floatingDragCleanup = null;
   floatingPanel.innerHTML = "";
-
-  const header = document.createElement("div");
-  header.className = "turnmap-floating-header";
-  const title = document.createElement("strong");
-  title.textContent = "TurnMap";
-  const actions = document.createElement("div");
-  const collapse = document.createElement("button");
-  collapse.type = "button";
-  collapse.textContent = floatingCollapsed ? "Open" : "Hide";
-  collapse.addEventListener("click", () => {
-    floatingCollapsed = !floatingCollapsed;
-    renderFloatingPanel();
-  });
-  const close = document.createElement("button");
-  close.type = "button";
-  close.textContent = "Off";
-  close.addEventListener("click", () => {
-    void chrome.storage.local.set({ [floatingPanelEnabledKey()]: false });
-    removeFloatingPanel();
-  });
-  actions.append(collapse, close);
-  header.append(title, actions);
-  floatingPanel.append(header);
-  floatingDragCleanup = attachFloatingDrag(header);
-
-  if (floatingCollapsed) return;
 
   const list = document.createElement("div");
   list.className = "turnmap-floating-list";
   list.addEventListener("wheel", containFloatingWheel, { passive: false });
+  const activeTurnIndex = getVisibleChatGptTurnIndex();
   floatingTurns.forEach((turn) => {
     const button = document.createElement("button");
     button.type = "button";
     button.innerHTML = `<span>Turn ${turn.turnIndex + 1}</span><strong></strong>`;
-    button.title = "Right-click to jump to the original turn.";
+    button.title = "Jump to this conversation turn.";
+    button.dataset.turnIndex = String(turn.turnIndex);
+    if (turn.turnIndex === activeTurnIndex) {
+      button.dataset.active = "true";
+      button.setAttribute("aria-current", "true");
+    }
     button.querySelector("strong")!.textContent = previewText(turn.userText);
     button.addEventListener("click", (event) => {
       event.preventDefault();
-      button.focus();
-    });
-    button.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
       event.stopPropagation();
+      button.focus();
       void performJumpToTurn({ type: "TURNMAP_JUMP_TO_TURN", navigation: turn.navigation, anchor: turn.sourceAnchor });
     });
     list.append(button);
@@ -208,96 +282,12 @@ function renderFloatingPanel(): void {
 
   floatingPanel.append(list);
   list.scrollTop = previousWasNearBottom ? list.scrollHeight : previousScrollTop;
-}
-
-function clampFloatingPosition(position: FloatingPosition): FloatingPosition {
-  const panelRect = floatingPanel?.getBoundingClientRect();
-  const width = panelRect?.width ?? 320;
-  const height = panelRect?.height ?? 360;
-  const margin = 8;
-
-  return {
-    left: Math.max(margin, Math.min(position.left, window.innerWidth - width - margin)),
-    top: Math.max(margin, Math.min(position.top, window.innerHeight - height - margin))
-  };
-}
-
-function applyFloatingPosition(position: FloatingPosition): void {
-  if (!floatingPanel) return;
-  const next = clampFloatingPosition(position);
-  floatingPanel.style.left = `${next.left}px`;
-  floatingPanel.style.top = `${next.top}px`;
-  floatingPanel.style.right = "auto";
-  floatingPanel.style.bottom = "auto";
-}
-
-function saveFloatingPosition(position: FloatingPosition): void {
-  const next = clampFloatingPosition(position);
-  void chrome.storage.local.set({ [floatingPanelPositionKey()]: next });
-}
-
-function loadFloatingPosition(): void {
-  void chrome.storage.local.get(floatingPanelPositionKey()).then((result) => {
-    const value = result[floatingPanelPositionKey()];
-    if (
-      value &&
-      typeof value === "object" &&
-      typeof (value as FloatingPosition).left === "number" &&
-      typeof (value as FloatingPosition).top === "number"
-    ) {
-      applyFloatingPosition(value as FloatingPosition);
-    }
-  });
-}
-
-function attachFloatingDrag(handle: HTMLElement): () => void {
-  let pointerId: number | null = null;
-  let startX = 0;
-  let startY = 0;
-  let startLeft = 0;
-  let startTop = 0;
-
-  const onPointerMove = (event: PointerEvent) => {
-    if (pointerId !== event.pointerId || !floatingPanel) return;
-    event.preventDefault();
-    applyFloatingPosition({
-      left: startLeft + event.clientX - startX,
-      top: startTop + event.clientY - startY
+  if (activeTurnIndex !== null && previousList === null) {
+    list.querySelector<HTMLElement>(`button[data-turn-index="${activeTurnIndex}"]`)?.scrollIntoView({
+      block: "center",
+      inline: "nearest"
     });
-  };
-
-  const onPointerUp = (event: PointerEvent) => {
-    if (pointerId !== event.pointerId || !floatingPanel) return;
-    pointerId = null;
-    handle.releasePointerCapture(event.pointerId);
-    const rect = floatingPanel.getBoundingClientRect();
-    saveFloatingPosition({ left: rect.left, top: rect.top });
-  };
-
-  const onPointerDown = (event: PointerEvent) => {
-    if ((event.target as HTMLElement | null)?.closest("button")) return;
-    if (!floatingPanel) return;
-    const rect = floatingPanel.getBoundingClientRect();
-    pointerId = event.pointerId;
-    startX = event.clientX;
-    startY = event.clientY;
-    startLeft = rect.left;
-    startTop = rect.top;
-    handle.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  };
-
-  handle.addEventListener("pointerdown", onPointerDown);
-  handle.addEventListener("pointermove", onPointerMove);
-  handle.addEventListener("pointerup", onPointerUp);
-  handle.addEventListener("pointercancel", onPointerUp);
-
-  return () => {
-    handle.removeEventListener("pointerdown", onPointerDown);
-    handle.removeEventListener("pointermove", onPointerMove);
-    handle.removeEventListener("pointerup", onPointerUp);
-    handle.removeEventListener("pointercancel", onPointerUp);
-  };
+  }
 }
 
 function containFloatingWheel(event: WheelEvent): void {
@@ -311,7 +301,8 @@ function containFloatingWheel(event: WheelEvent): void {
 
 function ensureFloatingPanel(): void {
   if (floatingPanel) {
-    renderFloatingPanel();
+    renderFloatingNavigator();
+    positionFloatingNavigatorNearLauncher();
     return;
   }
 
@@ -331,20 +322,16 @@ function ensureFloatingPanel(): void {
       background: var(--turnmap-float-bg);
       border: 1px solid var(--turnmap-float-border);
       border-radius: 8px;
-      bottom: 92px;
       box-shadow: 0 18px 42px var(--turnmap-float-shadow);
       color: var(--turnmap-float-text);
-      display: grid;
+      display: block;
       font: 12px Inter, ui-sans-serif, system-ui, sans-serif;
-      gap: 8px;
-      grid-template-rows: auto minmax(0, 1fr);
-      max-height: min(390px, calc(100vh - 80px));
+      max-height: min(60vh, calc(100vh - 16px));
       min-height: 0;
       overflow: hidden;
       padding: 10px;
       position: fixed;
-      right: 18px;
-      width: min(320px, calc(100vw - 36px));
+      width: min(320px, calc(100vw - 16px));
       z-index: 2147483600;
     }
     .turnmap-floating-panel[data-turnmap-theme="night"] {
@@ -369,20 +356,6 @@ function ensureFloatingPanel(): void {
       --turnmap-float-note: #5f704f;
       --turnmap-float-shadow: rgba(73, 96, 52, 0.16);
     }
-    .turnmap-floating-header {
-      align-items: center;
-      cursor: grab;
-      display: flex;
-      justify-content: space-between;
-      user-select: none;
-    }
-    .turnmap-floating-header:active {
-      cursor: grabbing;
-    }
-    .turnmap-floating-header div {
-      display: flex;
-      gap: 6px;
-    }
     .turnmap-floating-panel button {
       background: linear-gradient(180deg, var(--turnmap-float-surface) 0%, var(--turnmap-float-surface-soft) 100%);
       border: 1px solid var(--turnmap-float-border-strong);
@@ -395,17 +368,13 @@ function ensureFloatingPanel(): void {
     .turnmap-floating-list {
       display: grid;
       gap: 6px;
-      max-height: 286px;
+      max-height: calc(min(60vh, calc(100vh - 16px)) - 20px);
       min-height: 0;
       overflow-x: hidden;
-      overflow-y: hidden;
+      overflow-y: auto;
       padding-right: 2px;
       scrollbar-gutter: stable;
       overscroll-behavior: contain;
-    }
-    .turnmap-floating-panel:hover .turnmap-floating-list,
-    .turnmap-floating-list:focus-within {
-      overflow-y: auto;
     }
     .turnmap-floating-list button {
       box-sizing: border-box;
@@ -416,6 +385,10 @@ function ensureFloatingPanel(): void {
       min-width: 0;
       text-align: left;
       width: 100%;
+    }
+    .turnmap-floating-list button[data-active="true"] {
+      border-color: #10a37f;
+      box-shadow: inset 3px 0 0 #10a37f;
     }
     .turnmap-floating-list span {
       color: var(--turnmap-float-muted);
@@ -439,20 +412,22 @@ function ensureFloatingPanel(): void {
 
   floatingPanel = document.createElement("aside");
   floatingPanel.className = "turnmap-floating-panel";
+  floatingPanel.addEventListener("mouseenter", cancelFloatingNavigatorClose);
+  floatingPanel.addEventListener("mouseleave", scheduleFloatingNavigatorClose);
   document.body.append(floatingPanel);
   applyFloatingTheme();
   loadFloatingTheme();
-  renderFloatingPanel();
-  loadFloatingPosition();
+  renderFloatingNavigator();
+  positionFloatingNavigatorNearLauncher();
 }
 
 function setFloatingPanel(enabled: boolean, persist = true): void {
   if (persist) {
     void chrome.storage.local.set({ [floatingPanelEnabledKey()]: enabled });
   }
+  floatingNavigatorEnabled = enabled;
   if (enabled) {
     floatingTurns = getCurrentAdapter()?.getLatestTurns() ?? [];
-    ensureFloatingPanel();
   } else {
     removeFloatingPanel();
   }
@@ -592,6 +567,8 @@ function attachLauncherDrag(button: HTMLButtonElement): void {
     const dy = event.clientY - startY;
     if (Math.abs(dx) + Math.abs(dy) > 4) {
       launcherMovedDuringPointer = true;
+      cancelFloatingNavigatorOpen();
+      removeFloatingPanel();
     }
     if (!launcherMovedDuringPointer) return;
     event.preventDefault();
@@ -642,6 +619,8 @@ function ensureLauncher(): void {
     event.preventDefault();
     openSettingsFromLauncher();
   });
+  launcherButton.addEventListener("mouseenter", scheduleFloatingNavigatorOpen);
+  launcherButton.addEventListener("mouseleave", scheduleFloatingNavigatorClose);
   attachLauncherDrag(launcherButton);
   document.body.append(launcherButton);
   loadLauncherPosition();
@@ -660,11 +639,12 @@ function syncLauncherFromStorage(): void {
 function startTurnMapContentUi(): void {
   syncLauncherFromStorage();
   startPromptWorkbench();
+  window.addEventListener("resize", positionFloatingNavigatorNearLauncher);
 
   void chrome.storage.local.get(floatingPanelEnabledKey()).then((result) => {
     if (result[floatingPanelEnabledKey()]) {
+      floatingNavigatorEnabled = true;
       floatingTurns = activeAdapter?.getLatestTurns() ?? [];
-      ensureFloatingPanel();
     }
   });
 }

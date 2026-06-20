@@ -1131,10 +1131,10 @@ test("turn nodes handle right-click jumping from the whole card without stealing
   assert.match(articleOpen, /onContextMenu=\{jumpFromText\}/);
 });
 
-test("floating panel uses right-click jump and follows saved theme", () => {
+test("floating navigator opens from launcher hover and uses the main jump route", () => {
   const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
-  const renderStart = source.indexOf("function renderFloatingPanel");
-  const renderEnd = source.indexOf("function clampFloatingPosition", renderStart);
+  const renderStart = source.indexOf("function renderFloatingNavigator");
+  const renderEnd = source.indexOf("function containFloatingWheel", renderStart);
   const renderBody = source.slice(renderStart, renderEnd);
   const messageStart = source.indexOf('if (message.type === "TURNMAP_JUMP_TO_TURN")');
   const messageEnd = source.indexOf('if (message.type === "TURNMAP_SET_FLOATING_PANEL")', messageStart);
@@ -1145,18 +1145,25 @@ test("floating panel uses right-click jump and follows saved theme", () => {
   assert.match(source, /data-turnmap-theme/);
   assert.match(source, /themeStorageKey\(\) in changes/);
   assert.match(source, /prefers-color-scheme: dark/);
+  assert.match(source, /FLOATING_NAVIGATOR_HOVER_DELAY_MS\s*=\s*400/);
+  assert.match(source, /FLOATING_NAVIGATOR_CLOSE_DELAY_MS\s*=\s*200/);
+  assert.match(source, /function scheduleFloatingNavigatorOpen/);
+  assert.match(source, /function scheduleFloatingNavigatorClose/);
+  assert.match(source, /function canShowFloatingNavigator/);
+  assert.match(source, /activeAdapter\?\.site\.id\s*===\s*"chatgpt"/);
+  assert.match(source, /launcherMovedDuringPointer/);
 
-  assert.match(renderBody, /addEventListener\("click", \(event\) => \{\s*event\.preventDefault\(\);\s*button\.focus\(\);/s);
-  assert.match(renderBody, /addEventListener\("contextmenu", \(event\) => \{/);
+  assert.match(renderBody, /addEventListener\("click", \(event\) => \{/);
   assert.match(renderBody, /performJumpToTurn\(\{ type: "TURNMAP_JUMP_TO_TURN", navigation: turn\.navigation, anchor: turn\.sourceAnchor \}\)/);
   assert.doesNotMatch(renderBody, /getCurrentAdapter\(\)\?\.jumpToTurn/);
+  assert.doesNotMatch(renderBody, /refreshLatestTurns|refreshCompleteTurns|harvestTurnsByScrolling/);
   assert.match(messageBody, /performJumpToTurn\(message as JumpToTurnMessage\)/);
 });
 
-test("floating panel keeps its own scroll position across turn refresh renders", () => {
+test("floating navigator keeps its own scroll position across turn refresh renders", () => {
   const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
-  const renderStart = source.indexOf("function renderFloatingPanel");
-  const renderEnd = source.indexOf("function clampFloatingPosition", renderStart);
+  const renderStart = source.indexOf("function renderFloatingNavigator");
+  const renderEnd = source.indexOf("function containFloatingWheel", renderStart);
   const renderBody = source.slice(renderStart, renderEnd);
 
   assert.match(renderBody, /previousList/);
@@ -1165,7 +1172,7 @@ test("floating panel keeps its own scroll position across turn refresh renders",
   assert.match(renderBody, /list\.scrollTop\s*=\s*previousWasNearBottom\s*\?\s*list\.scrollHeight\s*:\s*previousScrollTop/);
 });
 
-test("floating panel merges partial observer updates instead of replacing the full list", () => {
+test("floating navigator merges partial observer updates instead of replacing the full list", () => {
   const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
   const broadcastStart = source.indexOf("function broadcastTurns");
   const broadcastEnd = source.indexOf("const activeAdapter", broadcastStart);
