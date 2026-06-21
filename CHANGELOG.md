@@ -2,6 +2,35 @@
 
 All notable changes to TurnMap will be documented in this file.
 
+## [0.8.2] - ChatGPT Native Navigation And Prompt Workbench Preview
+
+### Preview Scope
+
+- This is a ChatGPT-only preview build. Existing non-ChatGPT adapters remain on their current extraction and jump paths, with broader migration reserved for later 0.8.x work.
+- This release references ophel's ChatGPT native navigation and outline ideas, and my-prompt's input-side prompt workbench interaction model. TurnMap keeps its own implementation and does not copy GPL-licensed ophel code.
+
+### Added
+
+- Added a ChatGPT-focused ophel-style native turn index for quieter long-conversation reading and direct turn navigation.
+- Added a hover-triggered floating conversation navigator that lists ChatGPT turns near the TurnMap floating button and updates as new Q&A turns appear.
+- Added a ChatGPT prompt workbench next to the input box, with local prompt management, dynamic prompts, AI input optimization, image-prompt optimization, custom menu options, random option selection, and import/export.
+- Added editable built-in prompt templates, language-aware defaults, and theme-aware prompt workbench settings.
+- Added the 0.8.2 preview screenshot at `docs/assets/release-images/turnmap-v0.8.2-preview.png`.
+
+### Changed
+
+- Updated ChatGPT reading and jump behavior to prefer native page turn/message anchors before falling back to heavier legacy paths.
+- Updated AI optimization to rewrite only the current input, without sending the full conversation context, and to return in the user's selected language.
+- Updated image-prompt optimization so selected menu constraints are assembled into a professional prompt and written back to the input box.
+- Updated prompt workbench tooltips, icon layout, popup placement, and settings surfaces to better match the selected language and theme.
+- Updated package and extension metadata to `0.8.2`.
+
+### Fixed
+
+- Fixed prompt workbench content-script startup errors around missing settings fields.
+- Fixed floating prompt/workbench tooltip overlap and off-screen popup placement issues.
+- Reduced initial floating navigator scroll snap-back and right-click jump instability in the ChatGPT preview path.
+
 ## [0.7.2] - Reading, Jumping, And Settings Stability
 
 ### Added
