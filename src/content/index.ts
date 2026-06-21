@@ -598,7 +598,6 @@ function ensureLauncher(): void {
   launcherButton.type = "button";
   launcherButton.className = "turnmap-launcher";
   launcherButton.textContent = "";
-  launcherButton.title = "TurnMap: left-click opens map, right-click opens settings";
   launcherButton.setAttribute("aria-label", "Open TurnMap");
   const icon = document.createElement("img");
   icon.src = getTurnMapLauncherIconUrl();

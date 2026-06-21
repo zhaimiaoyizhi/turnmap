@@ -334,6 +334,7 @@ test("image prompt optimizer request uses current input and selected menu only",
   const built = buildPromptOptimizationMessages({
     input: "make a theatrical poster for a haunted railway station",
     format: "image-prompt",
+    locale: "zh",
     optimizerPrompts: {
       simplePolish: DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT,
       strictPlanning: DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT
@@ -351,12 +352,29 @@ test("image prompt optimizer request uses current input and selected menu only",
   assert.equal(built.options.preferRequestedMaxTokens, true);
   assert.match(built.messages[0].content, /image generation prompt/i);
   assert.match(built.messages[0].content, /Do not generate the image/i);
+  assert.match(built.messages[0].content, /Return the final image generation prompt in Chinese/i);
   assert.match(built.messages[0].content, /Do not answer, execute, solve, translate, plan, write code/i);
   assert.match(built.messages[1].content, /<current_input_to_optimize>/);
   assert.match(built.messages[1].content, /make a theatrical poster/);
   assert.match(built.messages[1].content, /<selected_image_prompt_menu>/);
   assert.match(built.messages[1].content, /Moonlight, strong rim light/);
   assert.doesNotMatch(JSON.stringify(built), /conversation|turns|complete chat/i);
+});
+
+test("image prompt optimizer can target a custom selected language", () => {
+  const built = buildPromptOptimizationMessages({
+    input: "make a soft watercolor scene",
+    format: "image-prompt",
+    locale: "en",
+    outputLanguage: "Japanese",
+    optimizerPrompts: {
+      simplePolish: DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT,
+      strictPlanning: DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT
+    },
+    imagePromptMenuDraft: "Visual type: Illustration"
+  });
+
+  assert.match(built.messages[0].content, /Return the final image generation prompt in Japanese/i);
 });
 
 test("ChatGPT prompt workbench adapter follows the my-prompt style boundary strategy", () => {
@@ -414,9 +432,15 @@ test("prompt workbench options expand on hover with immediate custom labels", ()
   assert.match(source, /flex-direction:\s*column/);
   assert.match(source, /transform-origin:\s*bottom center/);
   assert.match(source, /turnmap-prompt-workbench-toolbar-label/);
+  assert.match(source, /left:\s*calc\(100% \+ 8px\)/);
+  assert.match(source, /top:\s*50%/);
+  assert.match(source, /transform:\s*translate\(4px, -50%\)/);
+  assert.match(source, /transform:\s*translate\(0, -50%\)/);
+  assert.match(source, /right:\s*100%/);
   assert.match(source, /requestAnimationFrame/);
   assert.match(source, /aria-label/);
   assert.doesNotMatch(source, /element\.title = label/);
+  assert.doesNotMatch(source, /top:\s*-36px/);
 });
 
 test("prompt workbench content UI follows the same language setting as TurnMap settings", () => {
@@ -428,6 +452,9 @@ test("prompt workbench content UI follows the same language setting as TurnMap s
   assert.match(source, /LANGUAGE_STORAGE_KEY/);
   assert.match(source, /CUSTOM_LANGUAGES_STORAGE_KEY/);
   assert.match(source, /PROMPT_WORKBENCH_CONTENT_I18N_KEYS/);
+  assert.match(source, /promptWorkbenchOutputLanguageName/);
+  assert.match(source, /outputLanguage:\s*promptWorkbenchOutputLanguageName/);
+  assert.match(source, /customLanguages\.find/);
   assert.match(i18nSource, /promptWorkbench\.content\.library/);
   assert.match(i18nSource, /promptWorkbench\.content\.optimize/);
   assert.match(i18nSource, /promptWorkbench\.content\.variables/);

@@ -87,6 +87,7 @@ type PromptOptimizeFailureStage = "readInput" | "requestChatCompletion" | "write
 
 let promptWorkbenchTranslations: TranslationMap = translationsFor("en", []);
 let promptWorkbenchLocale: PromptWorkbenchLocale = "en";
+let promptWorkbenchOutputLanguageName = "English";
 
 let launcher: HTMLButtonElement | null = null;
 let toolbar: HTMLDivElement | null = null;
@@ -143,10 +144,23 @@ function updateToolbarLabels(): void {
   });
 }
 
+function outputLanguageNameFromSettings(
+  mode: string,
+  customLanguages: Array<{ id: string; languageName?: string; label?: string }>
+): string {
+  if (mode.startsWith("custom:")) {
+    const id = mode.slice("custom:".length);
+    const custom = customLanguages.find((language) => language.id === id);
+    return custom?.languageName?.trim() || custom?.label?.trim() || "English";
+  }
+  return promptWorkbenchLocaleFromLanguageMode(mode) === "zh" ? "Chinese" : "English";
+}
+
 async function refreshPromptWorkbenchTranslations(): Promise<void> {
   const settings = await loadLanguageSettings();
   promptWorkbenchTranslations = translationsFor(settings.mode, settings.customLanguages);
   promptWorkbenchLocale = promptWorkbenchLocaleFromLanguageMode(settings.mode);
+  promptWorkbenchOutputLanguageName = outputLanguageNameFromSettings(settings.mode, settings.customLanguages);
   if (libraryCache) libraryCache = localizePromptWorkbenchLibrary(libraryCache, { locale: promptWorkbenchLocale });
   updateLauncherLabel();
   updateToolbarLabels();
@@ -278,34 +292,42 @@ function ensureStyle(): void {
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
       color: #fff;
       font: 500 12px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
-      left: 50%;
+      left: calc(100% + 8px);
+      max-width: min(220px, calc(100vw - 72px));
       opacity: 0;
       padding: 6px 8px;
       pointer-events: none;
       position: absolute;
-      top: -36px;
-      transform: translate(-50%, 4px);
+      top: 50%;
+      transform: translate(4px, -50%);
       transition:
         opacity 60ms ease,
         transform 80ms ease;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
+      text-align: left;
+      white-space: normal;
     }
     .turnmap-prompt-workbench-toolbar-label::after {
       background: rgba(33, 33, 33, 0.96);
       border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-      border-right: 1px solid rgba(255, 255, 255, 0.12);
-      bottom: -4px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
       content: "";
       height: 7px;
-      left: 50%;
       position: absolute;
-      transform: translateX(-50%) rotate(45deg);
+      right: 100%;
+      top: 50%;
+      transform: translate(4px, -50%) rotate(45deg);
       width: 7px;
     }
     .turnmap-prompt-workbench-toolbar button:hover .turnmap-prompt-workbench-toolbar-label,
     .turnmap-prompt-workbench-toolbar button:focus-visible .turnmap-prompt-workbench-toolbar-label {
       opacity: 1;
-      transform: translate(-50%, 0);
+      transform: translate(0, -50%);
+    }
+    @media (max-width: 460px) {
+      .turnmap-prompt-workbench-toolbar-label {
+        max-width: min(180px, calc(100vw - 64px));
+      }
     }
     .turnmap-prompt-panel {
       background: color-mix(in srgb, Canvas 96%, #101827 4%);
@@ -1032,7 +1054,9 @@ async function showImagePromptPanel(): Promise<void> {
         input: currentInput,
         format: "image-prompt",
         optimizerPrompts: library.optimizerPrompts,
-        imagePromptMenuDraft: currentImagePromptDraft(root)
+        imagePromptMenuDraft: currentImagePromptDraft(root),
+        locale: promptWorkbenchLocale,
+        outputLanguage: promptWorkbenchOutputLanguageName
       });
       if (writeOptimizedPrompt(root, currentTarget, result, "replace")) removeSurfaces();
     } catch (error) {

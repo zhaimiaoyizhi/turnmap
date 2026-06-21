@@ -4,7 +4,8 @@ import {
   DEFAULT_SIMPLE_POLISH_OPTIMIZER_PROMPT,
   DEFAULT_STRICT_PLANNING_OPTIMIZER_PROMPT,
   type PromptOptimizeFormat,
-  type PromptOptimizerPrompts
+  type PromptOptimizerPrompts,
+  type PromptWorkbenchLocale
 } from "../../shared/prompt-workbench-storage.ts";
 
 type PromptOptimizationMessage = {
@@ -17,6 +18,8 @@ type PromptOptimizationRequest = {
   format: PromptOptimizeFormat | "image-prompt";
   optimizerPrompts: PromptOptimizerPrompts;
   imagePromptMenuDraft?: string;
+  locale?: PromptWorkbenchLocale;
+  outputLanguage?: string;
 };
 
 type PromptOptimizationMessages = {
@@ -63,13 +66,25 @@ Image-prompt mode rules:
 - If menu choices conflict, prefer the user's current input and mention the conflict as a concise constraint in the prompt.
 `.trim();
 
+function imagePromptLanguageRule(locale?: PromptWorkbenchLocale, outputLanguage?: string): string {
+  const targetLanguage = outputLanguage?.trim() || (locale === "zh" ? "Chinese" : "English");
+  const termRule =
+    targetLanguage.toLowerCase() === "chinese"
+      ? " Keep unavoidable model, style, aspect-ratio, and technical terms in their conventional form."
+      : "";
+  return `Return the final image generation prompt in ${targetLanguage}.${termRule}`;
+}
+
 export function buildPromptOptimizationMessages(request: PromptOptimizationRequest): PromptOptimizationMessages {
   const input = request.input.trim();
   const baseSystemPrompt =
     request.format === "strict-planning"
       ? `${request.optimizerPrompts.strictPlanning}\n\n${STRICT_PLANNING_FORMAT_RULES}`
       : request.format === "image-prompt"
-        ? `${DEFAULT_IMAGE_PROMPT_OPTIMIZER_PROMPT}\n\n${IMAGE_PROMPT_FORMAT_RULES}`
+        ? `${DEFAULT_IMAGE_PROMPT_OPTIMIZER_PROMPT}\n\n${IMAGE_PROMPT_FORMAT_RULES}\n\n${imagePromptLanguageRule(
+            request.locale,
+            request.outputLanguage
+          )}`
         : request.optimizerPrompts.simplePolish;
   const systemPrompt = `${baseSystemPrompt}\n\n${PROMPT_OPTIMIZATION_BOUNDARY_RULES}`;
   const userContent =

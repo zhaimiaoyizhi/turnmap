@@ -227,6 +227,14 @@ test("launcher uses the packaged TurnMap plugin icon", () => {
   assert.doesNotMatch(source, /launcherButton\.innerHTML\s*=/);
 });
 
+test("floating launcher avoids browser-native title tooltips over custom panels", () => {
+  const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
+
+  assert.match(source, /launcherButton\.setAttribute\("aria-label", "Open TurnMap"\)/);
+  assert.doesNotMatch(source, /launcherButton\.title\s*=/);
+  assert.doesNotMatch(source, /left-click opens map, right-click opens settings/);
+});
+
 test("content script can repair missing launcher after a previous partial start", () => {
   const source = readFileSync(new URL("../src/content/index.ts", import.meta.url), "utf8");
 

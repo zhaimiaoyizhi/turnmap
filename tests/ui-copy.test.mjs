@@ -297,6 +297,16 @@ test("settings page groups controls by target object", async () => {
   assert.match(stylesSource, /\.settings-check-grid/);
 });
 
+test("prompt workbench settings textareas follow the selected theme", async () => {
+  const stylesSource = await readFile(new URL("../src/settings-page/settings-page.css", import.meta.url), "utf8");
+
+  assert.match(stylesSource, /\.prompt-workbench-settings textarea\s*\{[\s\S]*background:\s*var\(--cm-surface\)/);
+  assert.match(stylesSource, /\.prompt-workbench-settings textarea\s*\{[\s\S]*color:\s*var\(--cm-text\)/);
+  assert.match(stylesSource, /\.prompt-workbench-settings textarea\s*\{[\s\S]*border:\s*1px solid var\(--cm-border\)/);
+  assert.match(stylesSource, /\.prompt-workbench-settings textarea:focus-visible\s*\{[\s\S]*border-color:\s*var\(--cm-primary\)/);
+  assert.match(stylesSource, /\.prompt-workbench-settings textarea::selection\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--cm-primary\)/);
+});
+
 test("default node size refreshes are idempotent to avoid graph reload loops", async () => {
   const canvasSource = await readFile(new URL("../src/side-panel/graph/TurnMapCanvas.tsx", import.meta.url), "utf8");
 
