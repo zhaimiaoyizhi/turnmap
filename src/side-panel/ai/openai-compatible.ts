@@ -14,6 +14,7 @@ type ChatCompletionOptions = {
   maxTokens?: number;
   jsonMode?: boolean;
   retriedEmptyResponse?: boolean;
+  preferRequestedMaxTokens?: boolean;
 };
 
 type ProviderPayload = {
@@ -288,9 +289,10 @@ async function ensureHostPermission(settings: AiSettings): Promise<void> {
   }
 }
 
-function effectiveMaxTokens(settings: AiSettings, requested?: number): number {
+function effectiveMaxTokens(settings: AiSettings, requested?: number, preferRequestedMaxTokens = false): number {
   const configured = normalizeRequestMaxTokens(settings.maxTokens);
   if (requested == null) return configured;
+  if (preferRequestedMaxTokens) return normalizeRequestMaxTokens(requested);
   return Math.max(configured, normalizeRequestMaxTokens(requested));
 }
 
@@ -316,7 +318,7 @@ export async function requestChatCompletion(
 ): Promise<string> {
   assertSettings(settings);
   await ensureHostPermission(settings);
-  const maxTokens = effectiveMaxTokens(settings, options.maxTokens);
+  const maxTokens = effectiveMaxTokens(settings, options.maxTokens, options.preferRequestedMaxTokens);
 
   const body: Record<string, unknown> = {
     model: settings.model,

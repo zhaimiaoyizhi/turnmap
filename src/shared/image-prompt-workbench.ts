@@ -30,7 +30,6 @@ export type ImagePromptMenuGroup = {
     en: string;
     zh: string;
   };
-  multiple?: boolean;
   options: ImagePromptMenuOption[];
 };
 
@@ -71,7 +70,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "coreSubject",
     title: { en: "Core Subject", zh: "核心主体" },
     promptLabel: { en: "Core subject", zh: "核心主体" },
-    multiple: true,
     options: [
       { id: "character", en: "Character identity and role", zh: "角色身份" },
       { id: "object", en: "Important object or product", zh: "关键物体" },
@@ -86,7 +84,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "actionEmotion",
     title: { en: "Action and Emotion", zh: "动作与情绪" },
     promptLabel: { en: "Action and emotion", zh: "动作与情绪" },
-    multiple: true,
     options: [
       { id: "static-display", en: "Static display", zh: "静态展示" },
       { id: "interaction", en: "Meaningful interaction", zh: "互动状态" },
@@ -104,7 +101,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "environment",
     title: { en: "Scene Environment", zh: "场景环境" },
     promptLabel: { en: "Scene environment", zh: "场景环境" },
-    multiple: true,
     options: [
       { id: "location", en: "Specific place, space, era, or worldbuilding", zh: "地点、空间、时代或世界观" },
       { id: "props", en: "Key props and background elements", zh: "关键道具与背景元素" },
@@ -122,7 +118,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "compositionCamera",
     title: { en: "Composition and Camera", zh: "构图与镜头" },
     promptLabel: { en: "Composition and camera", zh: "构图与镜头" },
-    multiple: true,
     options: [
       { id: "close-up", en: "Close-up", zh: "特写" },
       { id: "half-body", en: "Half-body shot", zh: "半身" },
@@ -142,7 +137,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "lighting",
     title: { en: "Lighting Design", zh: "光影设计" },
     promptLabel: { en: "Lighting design", zh: "光影设计" },
-    multiple: true,
     options: [
       { id: "spotlight", en: "Spotlight", zh: "聚光灯" },
       { id: "moonlight", en: "Moonlight", zh: "月光" },
@@ -162,7 +156,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "colorPalette",
     title: { en: "Color Palette", zh: "色彩方案" },
     promptLabel: { en: "Color palette", zh: "色彩方案" },
-    multiple: true,
     options: [
       { id: "high-saturation", en: "High saturation", zh: "高饱和" },
       { id: "low-saturation", en: "Low saturation", zh: "低饱和" },
@@ -180,7 +173,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "styleReference",
     title: { en: "Style Reference", zh: "风格参考" },
     promptLabel: { en: "Style reference", zh: "风格参考" },
-    multiple: true,
     options: [
       { id: "cinematography", en: "Cinematic photography", zh: "电影摄影" },
       { id: "broadway", en: "Broadway musical poster", zh: "百老汇音乐剧海报" },
@@ -198,7 +190,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "materialDetails",
     title: { en: "Materials and Details", zh: "材质与细节" },
     promptLabel: { en: "Materials and details", zh: "材质与细节" },
-    multiple: true,
     options: [
       { id: "fabric", en: "Fabric and costume material", zh: "服装材质" },
       { id: "skin", en: "Skin texture", zh: "皮肤质感" },
@@ -215,7 +206,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "quality",
     title: { en: "Image Quality", zh: "画面质量" },
     promptLabel: { en: "Image quality", zh: "画面质量" },
-    multiple: true,
     options: [
       { id: "high-detail", en: "High detail", zh: "高细节" },
       { id: "finished", en: "Highly finished", zh: "高完成度" },
@@ -230,7 +220,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "negativePrompt",
     title: { en: "Negative Prompt", zh: "负面提示" },
     promptLabel: { en: "Negative prompt", zh: "负面提示" },
-    multiple: true,
     options: [
       { id: "deformed-limbs", en: "Deformed limbs", zh: "畸形肢体" },
       { id: "extra-fingers", en: "Extra fingers", zh: "多余手指" },
@@ -248,7 +237,6 @@ export const IMAGE_PROMPT_MENU_GROUPS: ImagePromptMenuGroup[] = [
     id: "outputSpec",
     title: { en: "Output Spec", zh: "输出规格" },
     promptLabel: { en: "Output spec", zh: "输出规格" },
-    multiple: true,
     options: [
       { id: "1-1", en: "1:1", zh: "1:1" },
       { id: "16-9", en: "16:9", zh: "16:9" },

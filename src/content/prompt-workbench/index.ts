@@ -226,13 +226,14 @@ function ensureStyle(): void {
       border-radius: 999px;
       box-shadow: none;
       display: flex;
+      flex-direction: column-reverse;
       gap: 5px;
       opacity: 0;
       padding: 0;
       pointer-events: auto;
       position: fixed;
-      transform: translateX(-8px) scale(0.96);
-      transform-origin: left center;
+      transform: translateY(8px) scale(0.96);
+      transform-origin: bottom center;
       transition:
         opacity 120ms ease,
         transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -240,11 +241,11 @@ function ensureStyle(): void {
     }
     .turnmap-prompt-workbench-toolbar.is-open {
       opacity: 1;
-      transform: translateX(0) scale(1);
+      transform: translateY(0) scale(1);
     }
     .turnmap-prompt-workbench-toolbar.is-closing {
       opacity: 0;
-      transform: translateX(-6px) scale(0.98);
+      transform: translateY(6px) scale(0.98);
     }
     .turnmap-prompt-workbench-toolbar button {
       align-items: center;
@@ -425,12 +426,12 @@ function ensureStyle(): void {
       line-height: 1.2;
       padding: 4px 7px;
     }
-    .turnmap-prompt-image-option input {
-      accent-color: #6d5dfc;
-      height: 12px;
-      margin: 0;
-      padding: 0;
-      width: 12px;
+    .turnmap-prompt-image-option.is-selected,
+    .turnmap-prompt-image-option[data-selected="true"] {
+      background: rgba(109, 93, 252, 0.18);
+      border-color: rgba(109, 93, 252, 0.58);
+      color: #efeefe;
+      box-shadow: 0 0 0 1px rgba(109, 93, 252, 0.2);
     }
   `;
   document.documentElement.append(style);
@@ -492,16 +493,18 @@ function positionPanelNearAnchor(element: HTMLElement, anchor: HTMLElement, offs
   element.style.top = `${Math.max(margin, Math.min(window.innerHeight - measuredHeight - margin, top))}px`;
 }
 
-function positionToolbarNextToLauncher(element: HTMLElement, anchor: HTMLElement): void {
+function positionToolbarAboveLauncher(element: HTMLElement, anchor: HTMLElement): void {
+  const margin = 8;
+  const offset = 6;
   const rect = anchor.getBoundingClientRect();
-  const width = element.offsetWidth || 164;
-  const height = element.offsetHeight || 36;
-  const preferredLeft = rect.right + 6;
-  const left =
-    preferredLeft + width <= window.innerWidth - 8
-      ? preferredLeft
-      : Math.max(8, Math.min(window.innerWidth - width - 8, rect.left - width - 6));
-  const top = Math.max(8, Math.min(window.innerHeight - height - 8, rect.top + (rect.height - height) / 2));
+  const width = element.offsetWidth || 36;
+  const height = element.offsetHeight || 200;
+  const spaceAbove = Math.max(0, rect.top - margin - offset);
+  const top =
+    spaceAbove >= height
+      ? rect.top - height - offset
+      : Math.max(margin, Math.min(window.innerHeight - height - margin, rect.bottom + offset));
+  const left = Math.max(margin, Math.min(window.innerWidth - width - margin, rect.left + (rect.width - width) / 2));
   element.style.left = `${left}px`;
   element.style.top = `${top}px`;
 }
@@ -572,7 +575,7 @@ function showToolbar(): void {
   cancelToolbarClose();
   ensureStyle();
   if (toolbar) {
-    positionToolbarNextToLauncher(toolbar, launcher);
+    positionToolbarAboveLauncher(toolbar, launcher);
     toolbar.classList.add("is-open");
     toolbar.classList.remove("is-closing");
     return;
@@ -589,7 +592,7 @@ function showToolbar(): void {
     button("manage", "settings", openPromptWorkbenchSettings)
   );
   document.body.append(toolbar);
-  positionToolbarNextToLauncher(toolbar, launcher);
+  positionToolbarAboveLauncher(toolbar, launcher);
   requestAnimationFrame(() => {
     toolbar?.classList.add("is-open");
   });
@@ -818,21 +821,19 @@ function showVariablesPanel(missingVariables: string[] = []): void {
 function selectedImagePromptValues(root: HTMLElement): Record<ImagePromptMenuGroupId, string[]> {
   const selections = {} as Record<ImagePromptMenuGroupId, string[]>;
   for (const group of IMAGE_PROMPT_MENU_GROUPS) {
-    const checked = Array.from(root.querySelectorAll<HTMLInputElement>(`input[data-image-group="${group.id}"]:checked`)).map(
-      (input) => input.value
+    const selected = root.querySelector<HTMLButtonElement>(
+      `button[data-image-option][data-image-group="${group.id}"][data-selected="true"]`
     );
-    selections[group.id] = checked;
-  }
-  return selections;
-}
-
-function customImagePromptValues(root: HTMLElement): Partial<Record<ImagePromptMenuGroupId, string[]>> {
-  const selections: Partial<Record<ImagePromptMenuGroupId, string[]>> = {};
-  for (const group of IMAGE_PROMPT_MENU_GROUPS) {
-    const values = Array.from(root.querySelectorAll<HTMLElement>(`[data-custom-image-group="${group.id}"] span`))
-      .map((element) => element.textContent?.trim() ?? "")
-      .filter(Boolean);
-    if (values.length > 0) selections[group.id] = values;
+    if (!selected) {
+      selections[group.id] = [];
+      continue;
+    }
+    if (selected.dataset.imageOther === "true") {
+      const custom = root.querySelector<HTMLInputElement>(`input[data-image-custom-input="${group.id}"]`)?.value.trim() ?? "";
+      selections[group.id] = custom ? [custom] : [];
+      continue;
+    }
+    selections[group.id] = selected.value.trim() ? [selected.value.trim()] : [];
   }
   return selections;
 }
@@ -842,23 +843,43 @@ function currentImagePromptDraft(root: HTMLElement): string {
   return buildImagePromptMenuDraft({
     concept,
     selections: selectedImagePromptValues(root),
-    customSelections: customImagePromptValues(root),
     locale: promptWorkbenchLocale
   });
 }
 
 function randomizeImagePromptSelections(root: HTMLElement): void {
   for (const group of IMAGE_PROMPT_MENU_GROUPS) {
-    const inputs = Array.from(root.querySelectorAll<HTMLInputElement>(`input[data-image-group="${group.id}"]`));
-    inputs.forEach((input) => {
-      input.checked = false;
-    });
-    const shuffled = [...inputs].sort(() => Math.random() - 0.5);
-    const count = group.multiple ? Math.min(2, Math.max(1, Math.floor(Math.random() * 3))) : 1;
-    shuffled.slice(0, count).forEach((input) => {
-      input.checked = true;
-    });
+    selectRandomImagePromptOption(root, group.id);
   }
+}
+
+function setImagePromptOptionSelected(button: HTMLButtonElement, selected: boolean): void {
+  button.dataset.selected = selected ? "true" : "false";
+  button.setAttribute("aria-pressed", selected ? "true" : "false");
+  button.classList.toggle("is-selected", selected);
+}
+
+function toggleImagePromptOption(root: HTMLElement, button: HTMLButtonElement): void {
+  const groupId = button.dataset.imageGroup as ImagePromptMenuGroupId | undefined;
+  if (!groupId) return;
+  const wasSelected = button.dataset.selected === "true";
+  root
+    .querySelectorAll<HTMLButtonElement>(`button[data-image-option][data-image-group="${groupId}"]`)
+    .forEach((option) => setImagePromptOptionSelected(option, false));
+  setImagePromptOptionSelected(button, !wasSelected);
+}
+
+function selectRandomImagePromptOption(root: HTMLElement, groupId: ImagePromptMenuGroupId): void {
+  const options = Array.from(
+    root.querySelectorAll<HTMLButtonElement>(
+      `button[data-image-option][data-image-group="${groupId}"]:not([data-image-other="true"])`
+    )
+  );
+  root
+    .querySelectorAll<HTMLButtonElement>(`button[data-image-option][data-image-group="${groupId}"]`)
+    .forEach((option) => setImagePromptOptionSelected(option, false));
+  const selected = options[Math.floor(Math.random() * options.length)];
+  if (selected) setImagePromptOptionSelected(selected, true);
 }
 
 function addCustomImagePromptSelection(root: HTMLElement, groupId: ImagePromptMenuGroupId): void {
@@ -866,9 +887,19 @@ function addCustomImagePromptSelection(root: HTMLElement, groupId: ImagePromptMe
   const list = root.querySelector<HTMLElement>(`[data-custom-image-group="${groupId}"]`);
   const value = input?.value.trim();
   if (!input || !list || !value) return;
-  const chip = document.createElement("span");
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "turnmap-prompt-image-option";
+  chip.dataset.imageOption = "custom";
+  chip.dataset.imageGroup = groupId;
+  chip.dataset.selected = "false";
+  chip.value = value;
   chip.textContent = value;
+  chip.setAttribute("aria-pressed", "false");
+  chip.setAttribute("aria-label", value);
+  chip.addEventListener("click", () => toggleImagePromptOption(root, chip));
   list.append(chip);
+  toggleImagePromptOption(root, chip);
   input.value = "";
   repositionPanel();
 }
@@ -946,11 +977,18 @@ async function showImagePromptPanel(): Promise<void> {
         ${group.options
           .map((option) => {
             const value = option[promptWorkbenchLocale];
-            return `<label class="turnmap-prompt-image-option"><input type="checkbox" data-image-group="${group.id}" value="${escapeHtml(
+            return `<button type="button" class="turnmap-prompt-image-option" data-image-option="${escapeHtml(
+              option.id
+            )}" data-image-group="${group.id}" data-selected="false" aria-pressed="false" value="${escapeHtml(
               value
-            )}" />${escapeHtml(value)}</label>`;
+            )}" aria-label="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
           })
           .join("")}
+        <button type="button" class="turnmap-prompt-image-option" data-image-option="other" data-image-group="${
+          group.id
+        }" data-image-other="true" data-selected="false" aria-pressed="false" value="" aria-label="${escapeHtml(
+          label("imagePromptCustom")
+        )}">${escapeHtml(label("imagePromptCustom"))}</button>
       </div>
       <div class="turnmap-prompt-panel__row">
         <input data-image-custom-input="${group.id}" placeholder="${escapeHtml(label("imagePromptCustom"))}" />
@@ -964,6 +1002,9 @@ async function showImagePromptPanel(): Promise<void> {
   }
   repositionPanel();
 
+  root.querySelectorAll<HTMLButtonElement>("button[data-image-option]").forEach((button) => {
+    button.addEventListener("click", () => toggleImagePromptOption(root, button));
+  });
   root.querySelectorAll<HTMLButtonElement>("[data-add-custom]").forEach((button) => {
     button.addEventListener("click", () => addCustomImagePromptSelection(root, button.dataset.addCustom as ImagePromptMenuGroupId));
   });
@@ -1139,7 +1180,7 @@ export function startPromptWorkbench(): void {
     removeSurfaces();
   });
   window.addEventListener("resize", () => {
-    if (toolbar && launcher) positionToolbarNextToLauncher(toolbar, launcher);
+    if (toolbar && launcher) positionToolbarAboveLauncher(toolbar, launcher);
     if (panel && launcher) positionPanelNearAnchor(panel, launcher);
   });
 }

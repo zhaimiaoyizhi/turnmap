@@ -24,6 +24,7 @@ type PromptOptimizationMessages = {
   options: {
     temperature: number;
     maxTokens: number;
+    preferRequestedMaxTokens: boolean;
   };
 };
 
@@ -89,7 +90,8 @@ export function buildPromptOptimizationMessages(request: PromptOptimizationReque
     ],
     options: {
       temperature: request.format === "strict-planning" ? 0.1 : request.format === "image-prompt" ? 0.35 : 0.2,
-      maxTokens: request.format === "strict-planning" ? 1800 : request.format === "image-prompt" ? 2200 : 1200
+      maxTokens: request.format === "strict-planning" ? 1400 : request.format === "image-prompt" ? 1600 : 800,
+      preferRequestedMaxTokens: true
     }
   };
 }

@@ -220,7 +220,8 @@ test("prompt optimizer builds current-input-only requests for both formats", () 
     }
   });
   assert.equal(simple.options.temperature, 0.2);
-  assert.equal(simple.options.maxTokens, 1200);
+  assert.equal(simple.options.maxTokens, 800);
+  assert.equal(simple.options.preferRequestedMaxTokens, true);
   assert.match(simple.messages[0].content, /non-negotiable/i);
   assert.match(simple.messages[0].content, /Do not answer, execute, solve, translate, plan, write code/i);
   assert.match(simple.messages[0].content, /only rewrite or structure the user's input as a better prompt/i);
@@ -346,7 +347,8 @@ test("image prompt optimizer request uses current input and selected menu only",
   });
 
   assert.equal(built.options.temperature, 0.35);
-  assert.equal(built.options.maxTokens, 2200);
+  assert.equal(built.options.maxTokens, 1600);
+  assert.equal(built.options.preferRequestedMaxTokens, true);
   assert.match(built.messages[0].content, /image generation prompt/i);
   assert.match(built.messages[0].content, /Do not generate the image/i);
   assert.match(built.messages[0].content, /Do not answer, execute, solve, translate, plan, write code/i);
@@ -407,7 +409,10 @@ test("prompt workbench options expand on hover with immediate custom labels", ()
 
   assert.match(source, /mouseenter/);
   assert.match(source, /mouseleave/);
-  assert.match(source, /positionToolbarNextToLauncher/);
+  assert.match(source, /positionToolbarAboveLauncher/);
+  assert.match(source, /spaceAbove/);
+  assert.match(source, /flex-direction:\s*column/);
+  assert.match(source, /transform-origin:\s*bottom center/);
   assert.match(source, /turnmap-prompt-workbench-toolbar-label/);
   assert.match(source, /requestAnimationFrame/);
   assert.match(source, /aria-label/);
@@ -477,11 +482,21 @@ test("prompt workbench exposes a lightweight image prompt optimizer entry", () =
   const i18nSource = readFileSync(new URL("../src/side-panel/i18n/i18n-storage.ts", import.meta.url), "utf8");
 
   assert.match(source, /showImagePromptPanel/);
+  assert.match(source, /toggleImagePromptOption/);
+  assert.match(source, /setImagePromptOptionSelected/);
   assert.match(source, /randomizeImagePromptSelections/);
+  assert.match(source, /selectRandomImagePromptOption/);
   assert.match(source, /saveImagePromptPreset/);
   assert.match(source, /buildImagePromptMenuDraft/);
   assert.match(source, /imagePromptMenuDraft/);
   assert.match(source, /button\("imagePrompt", "image"/);
+  assert.match(source, /data-image-option/);
+  assert.match(source, /data-selected/);
+  assert.match(source, /aria-pressed/);
+  assert.match(source, /data-image-other/);
+  assert.match(source, /:not\(\[data-image-other="true"\]\)/);
+  assert.doesNotMatch(source, /type="checkbox" data-image-group/);
+  assert.doesNotMatch(source, /querySelectorAll<HTMLInputElement>\(`input\[data-image-group/);
   assert.match(i18nSource, /promptWorkbench\.content\.imagePrompt/);
   assert.match(i18nSource, /promptWorkbench\.content\.imagePromptRandom/);
   assert.match(i18nSource, /promptWorkbench\.content\.imagePromptSavePreset/);

@@ -76,6 +76,23 @@ test("requestChatCompletion keeps task-specific max_tokens above a low saved val
   assert.equal(body.max_tokens, 1800);
 });
 
+test("requestChatCompletion can prefer a fast task max_tokens below the saved value", async () => {
+  withChromePermissions();
+  let body = {};
+  globalThis.fetch = async (_url, init) => {
+    body = JSON.parse(String(init.body));
+    return new Response(JSON.stringify({ choices: [{ message: { content: "hello" } }] }), { status: 200 });
+  };
+
+  await requestChatCompletion(
+    settings({ maxTokens: 4096 }),
+    [{ role: "user", content: "Rewrite this prompt quickly." }],
+    { temperature: 0.2, maxTokens: 800, preferRequestedMaxTokens: true }
+  );
+
+  assert.equal(body.max_tokens, 800);
+});
+
 test("provider metadata includes 0.5.0 presets with cost-aware default models", () => {
   const providerIds = aiProviderOptions.map((provider) => provider.id);
 
